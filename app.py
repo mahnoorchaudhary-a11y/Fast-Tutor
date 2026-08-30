@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import io
+import os
 from datetime import datetime
+from io import BytesIO
 
 # ============================================================
 # FAST TUTOR
-# Student Marks, Results & Academic Management System
+# Simple Student Marks & Results Management System
 # ============================================================
 
 st.set_page_config(
@@ -16,123 +17,96 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-DB_NAME = "fast_tutor.db"
+DB_FILE = "fast_tutor.db"
+LOGO_FILE = "fast_tutor_logo.png"
 
 
 # ============================================================
 # DATABASE
 # ============================================================
 
-def get_connection():
-    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def get_db():
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
 
 
-conn = get_connection()
+db = get_db()
 
 
-def execute(query, params=(), fetch=False, many=False):
+def create_database():
+
+    cursor = db.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            roll_no TEXT UNIQUE NOT NULL,
+            student_name TEXT NOT NULL,
+            program TEXT DEFAULT '',
+            semester TEXT DEFAULT '',
+            section TEXT DEFAULT ''
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS courses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_code TEXT UNIQUE NOT NULL,
+            course_name TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            roll_no TEXT NOT NULL,
+            course_code TEXT NOT NULL,
+            assessment TEXT NOT NULL,
+            obtained REAL DEFAULT 0,
+            total REAL DEFAULT 100,
+            percentage REAL DEFAULT 0,
+            grade TEXT DEFAULT '',
+            UNIQUE(roll_no, course_code, assessment)
+        )
+    """)
+
+    db.commit()
+
+
+create_database()
+
+
+# ============================================================
+# DATABASE HELPERS
+# ============================================================
+
+def run_query(query, parameters=(), fetch=False):
+
     try:
-        cursor = conn.cursor()
 
-        if many:
-            cursor.executemany(query, params)
-        else:
-            cursor.execute(query, params)
-
-        conn.commit()
+        cursor = db.cursor()
+        cursor.execute(query, parameters)
+        db.commit()
 
         if fetch:
             return cursor.fetchall()
 
         return True
 
-    except sqlite3.IntegrityError as e:
-        conn.rollback()
-        st.error(f"Database integrity error: {e}")
+    except sqlite3.IntegrityError:
+        db.rollback()
         return False
 
     except sqlite3.Error as e:
-        conn.rollback()
+        db.rollback()
         st.error(f"Database error: {e}")
         return False
 
 
-def initialize_database():
-
-    execute("""
-        CREATE TABLE IF NOT EXISTS students (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            roll_no TEXT UNIQUE NOT NULL,
-            student_name TEXT NOT NULL,
-            program TEXT,
-            semester TEXT,
-            section TEXT,
-            created_at TEXT
-        )
-    """)
-
-    execute("""
-        CREATE TABLE IF NOT EXISTS courses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            course_code TEXT UNIQUE NOT NULL,
-            course_name TEXT NOT NULL,
-            credit_hours REAL DEFAULT 0,
-            semester TEXT,
-            created_at TEXT
-        )
-    """)
-
-    execute("""
-        CREATE TABLE IF NOT EXISTS assessments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            assessment_name TEXT NOT NULL,
-            total_marks REAL DEFAULT 100,
-            created_at TEXT
-        )
-    """)
-
-    execute("""
-        CREATE TABLE IF NOT EXISTS results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            roll_no TEXT NOT NULL,
-            course_code TEXT NOT NULL,
-            assessment TEXT NOT NULL,
-            obtained_marks REAL DEFAULT 0,
-            total_marks REAL DEFAULT 100,
-            percentage REAL DEFAULT 0,
-            grade TEXT,
-            entered_at TEXT,
-            UNIQUE(roll_no, course_code, assessment)
-        )
-    """)
-
-    execute("""
-        CREATE TABLE IF NOT EXISTS programs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            program_name TEXT UNIQUE NOT NULL
-        )
-    """)
-
-    execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            id INTEGER PRIMARY KEY,
-            institute_name TEXT,
-            semester TEXT,
-            academic_year TEXT
-        )
-    """)
-
-
-initialize_database()
-
-
 # ============================================================
-# HELPER FUNCTIONS
+# GRADING
 # ============================================================
 
-def get_grade(percentage):
+def calculate_grade(percentage):
 
     if percentage >= 90:
         return "A+"
@@ -158,49 +132,19 @@ def get_grade(percentage):
         return "F"
 
 
-def safe_float(value, default=0):
+# ============================================================
+# DATA LOADERS
+# ============================================================
 
-    try:
-        if pd.isna(value):
-            return default
-        return float(value)
-    except:
-        return default
+def get_students():
 
-
-def normalize_column_name(name):
-
-    return (
-        str(name)
-        .strip()
-        .lower()
-        .replace(" ", "_")
-        .replace("-", "_")
-        .replace("/", "_")
-    )
-
-
-def find_column(df, possible_names):
-
-    normalized = {
-        normalize_column_name(col): col
-        for col in df.columns
-    }
-
-    for name in possible_names:
-
-        key = normalize_column_name(name)
-
-        if key in normalized:
-            return normalized[key]
-
-    return None
-
-
-def load_students():
-
-    rows = execute("""
-        SELECT id, roll_no, student_name, program, semester, section
+    rows = run_query("""
+        SELECT
+            roll_no,
+            student_name,
+            program,
+            semester,
+            section
         FROM students
         ORDER BY roll_no
     """, fetch=True)
@@ -208,7 +152,6 @@ def load_students():
     return pd.DataFrame(
         rows,
         columns=[
-            "ID",
             "Roll Number",
             "Student Name",
             "Program",
@@ -218,10 +161,12 @@ def load_students():
     )
 
 
-def load_courses():
+def get_courses():
 
-    rows = execute("""
-        SELECT id, course_code, course_name, credit_hours, semester
+    rows = run_query("""
+        SELECT
+            course_code,
+            course_name
         FROM courses
         ORDER BY course_code
     """, fetch=True)
@@ -229,45 +174,36 @@ def load_courses():
     return pd.DataFrame(
         rows,
         columns=[
-            "ID",
             "Course Code",
-            "Course Name",
-            "Credit Hours",
-            "Semester"
+            "Course Name"
         ]
     )
 
 
-def load_results():
+def get_results():
 
-    rows = execute("""
+    rows = run_query("""
         SELECT
-            r.id,
             r.roll_no,
             s.student_name,
             r.course_code,
-            c.course_name,
             r.assessment,
-            r.obtained_marks,
-            r.total_marks,
+            r.obtained,
+            r.total,
             r.percentage,
             r.grade
         FROM results r
         LEFT JOIN students s
             ON r.roll_no = s.roll_no
-        LEFT JOIN courses c
-            ON r.course_code = c.course_code
         ORDER BY r.roll_no, r.course_code
     """, fetch=True)
 
     return pd.DataFrame(
         rows,
         columns=[
-            "ID",
             "Roll Number",
             "Student Name",
             "Course Code",
-            "Course Name",
             "Assessment",
             "Obtained Marks",
             "Total Marks",
@@ -278,40 +214,113 @@ def load_results():
 
 
 # ============================================================
-# HEADER / BRANDING
+# COLUMN DETECTION
+# ============================================================
+
+def find_column(df, names):
+
+    normalized = {}
+
+    for column in df.columns:
+
+        clean = (
+            str(column)
+            .strip()
+            .lower()
+            .replace(" ", "_")
+            .replace("-", "_")
+        )
+
+        normalized[clean] = column
+
+    for name in names:
+
+        clean = (
+            name
+            .strip()
+            .lower()
+            .replace(" ", "_")
+            .replace("-", "_")
+        )
+
+        if clean in normalized:
+            return normalized[clean]
+
+    return None
+
+
+# ============================================================
+# CUSTOM CSS
 # ============================================================
 
 st.markdown("""
 <style>
 
-.main-title {
+#MainMenu {
+    visibility: hidden;
+}
+
+footer {
+    visibility: hidden;
+}
+
+header {
+    visibility: hidden;
+}
+
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+}
+
+.fast-title {
     font-size: 42px;
     font-weight: 800;
     margin-bottom: 0;
 }
 
-.subtitle {
-    font-size: 18px;
-    color: #666;
+.fast-subtitle {
+    font-size: 17px;
+    color: #6b7280;
+    margin-top: -5px;
     margin-bottom: 25px;
 }
 
-.card {
-    padding: 20px;
-    border-radius: 15px;
-    background: #f7f7f7;
-    border: 1px solid #ddd;
-    text-align: center;
+.hero {
+    padding: 30px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #eaf7ff, #f7fbff);
+    border: 1px solid #d7eefe;
+    margin-bottom: 25px;
 }
 
-.card-number {
-    font-size: 32px;
+.hero h1 {
+    font-size: 34px;
+    margin-bottom: 5px;
+}
+
+.hero p {
+    color: #5f6b7a;
+    font-size: 17px;
+}
+
+.quick-card {
+    padding: 22px;
+    border-radius: 18px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    min-height: 145px;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.04);
+}
+
+.quick-card h3 {
+    margin-top: 0;
+}
+
+.logo-text {
+    font-size: 28px;
     font-weight: 800;
-}
-
-.card-label {
-    font-size: 16px;
-    color: #666;
+    color: #0795d1;
 }
 
 </style>
@@ -322,39 +331,44 @@ st.markdown("""
 # SIDEBAR
 # ============================================================
 
-st.sidebar.markdown(
-    "<h1 style='text-align:center;'>🎓 Fast Tutor</h1>",
-    unsafe_allow_html=True
-)
+with st.sidebar:
 
-st.sidebar.markdown(
-    "<p style='text-align:center;'>Student Academic Management</p>",
-    unsafe_allow_html=True
-)
+    if os.path.exists(LOGO_FILE):
 
-st.sidebar.divider()
+        st.image(
+            LOGO_FILE,
+            use_container_width=True
+        )
 
-page = st.sidebar.radio(
-    "Navigation",
-    [
-        "🏠 Dashboard",
-        "👨‍🎓 Students",
-        "📚 Courses",
-        "📝 Assessments",
-        "📥 Bulk Student Import",
-        "📊 Bulk Marks Upload",
-        "📈 Results",
-        "📋 Student Transcript",
-        "📊 Performance Analysis",
-        "📤 Import / Export",
-        "⚙️ Settings"
-    ]
-)
+    else:
 
-st.sidebar.divider()
+        st.markdown(
+            "<div class='logo-text'>🎓 FAST TUTOR</div>",
+            unsafe_allow_html=True
+        )
 
-st.sidebar.caption("Fast Tutor")
-st.sidebar.caption("Student Marks & Results Management")
+    st.caption("Student Marks & Results")
+
+    st.divider()
+
+    page = st.radio(
+        "MENU",
+        [
+            "🏠 Dashboard",
+            "👨‍🎓 Students",
+            "📥 Upload Students",
+            "📊 Upload Marks",
+            "📈 Results",
+            "🧾 Student Report",
+            "📚 Courses",
+            "📤 Export"
+        ]
+    )
+
+    st.divider()
+
+    st.caption("Fast Tutor")
+    st.caption("Simple • Fast • Smart")
 
 
 # ============================================================
@@ -364,109 +378,163 @@ st.sidebar.caption("Student Marks & Results Management")
 if page == "🏠 Dashboard":
 
     st.markdown(
-        "<div class='main-title'>🎓 Fast Tutor</div>",
+        "<div class='fast-title'>Fast Tutor</div>",
         unsafe_allow_html=True
     )
 
     st.markdown(
-        "<div class='subtitle'>Student Marks, Results & Academic Management System</div>",
+        "<div class='fast-subtitle'>"
+        "Student Marks & Results Management"
+        "</div>",
         unsafe_allow_html=True
     )
 
-    students_count = execute(
+    student_count = run_query(
         "SELECT COUNT(*) FROM students",
         fetch=True
     )[0][0]
 
-    courses_count = execute(
+    course_count = run_query(
         "SELECT COUNT(*) FROM courses",
         fetch=True
     )[0][0]
 
-    results_count = execute(
+    result_count = run_query(
         "SELECT COUNT(*) FROM results",
         fetch=True
     )[0][0]
 
-    assessments_count = execute(
-        "SELECT COUNT(*) FROM assessments",
+    passed_count = run_query(
+        "SELECT COUNT(*) FROM results WHERE grade != 'F'",
         fetch=True
     )[0][0]
 
-    col1, col2, col3, col4 = st.columns(4)
+    # --------------------------------------------------------
+    # STAT CARDS
+    # --------------------------------------------------------
 
-    with col1:
-        st.metric("👨‍🎓 Students", students_count)
+    c1, c2, c3, c4 = st.columns(4)
 
-    with col2:
-        st.metric("📚 Courses", courses_count)
+    with c1:
+        st.metric(
+            "👨‍🎓 Students",
+            student_count
+        )
 
-    with col3:
-        st.metric("📝 Assessments", assessments_count)
+    with c2:
+        st.metric(
+            "📚 Courses",
+            course_count
+        )
 
-    with col4:
-        st.metric("📊 Results", results_count)
+    with c3:
+        st.metric(
+            "📊 Results",
+            result_count
+        )
 
-    st.divider()
+    with c4:
+        st.metric(
+            "✅ Passed",
+            passed_count
+        )
 
-    results_df = load_results()
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    if not results_df.empty:
+    # --------------------------------------------------------
+    # HERO
+    # --------------------------------------------------------
 
-        col1, col2 = st.columns(2)
+    st.markdown("""
+    <div class="hero">
+        <h1>Welcome to Fast Tutor 👋</h1>
+        <p>
+        Manage students, upload complete marks files,
+        calculate results automatically and generate
+        student reports — all in one place.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
-        with col1:
+    # --------------------------------------------------------
+    # QUICK ACTIONS
+    # --------------------------------------------------------
 
-            st.subheader("📈 Average Course Performance")
+    st.subheader("⚡ Quick Actions")
+
+    q1, q2, q3, q4 = st.columns(4)
+
+    with q1:
+
+        st.markdown("""
+        <div class="quick-card">
+        <h3>👨‍🎓 Students</h3>
+        <p>View and manage all students.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with q2:
+
+        st.markdown("""
+        <div class="quick-card">
+        <h3>📥 Upload Students</h3>
+        <p>Import hundreds of students using Excel.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with q3:
+
+        st.markdown("""
+        <div class="quick-card">
+        <h3>📊 Upload Marks</h3>
+        <p>Upload complete marks in one file.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with q4:
+
+        st.markdown("""
+        <div class="quick-card">
+        <h3>🧾 Reports</h3>
+        <p>View individual student performance.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --------------------------------------------------------
+    # PERFORMANCE CHART
+    # --------------------------------------------------------
+
+    results = get_results()
+
+    if not results.empty:
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        left, right = st.columns(2)
+
+        with left:
+
+            st.subheader("📈 Course Performance")
 
             course_average = (
-                results_df
+                results
                 .groupby("Course Code")["Percentage"]
                 .mean()
-                .sort_values(ascending=False)
+                .round(2)
             )
 
             st.bar_chart(course_average)
 
-        with col2:
+        with right:
 
             st.subheader("🎯 Grade Distribution")
 
-            grade_distribution = (
-                results_df["Grade"]
+            grade_counts = (
+                results["Grade"]
                 .value_counts()
-                .sort_index()
             )
 
-            st.bar_chart(grade_distribution)
-
-    else:
-
-        st.info(
-            "No results have been uploaded yet. "
-            "Use 'Bulk Marks Upload' to upload student marks."
-        )
-
-    st.divider()
-
-    st.subheader("⚡ Quick Actions")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-
-        if st.button("📥 Import Students", use_container_width=True):
-            st.info("Open 'Bulk Student Import' from the sidebar.")
-
-    with col2:
-
-        if st.button("📊 Upload Marks", use_container_width=True):
-            st.info("Open 'Bulk Marks Upload' from the sidebar.")
-
-    with col3:
-
-        if st.button("📈 View Results", use_container_width=True):
-            st.info("Open 'Results' from the sidebar.")
+            st.bar_chart(grade_counts)
 
 
 # ============================================================
@@ -475,284 +543,77 @@ if page == "🏠 Dashboard":
 
 elif page == "👨‍🎓 Students":
 
-    st.title("👨‍🎓 Student Management")
+    st.title("👨‍🎓 Students")
 
-    tab1, tab2 = st.tabs([
-        "Student List",
-        "Add Student"
-    ])
+    students = get_students()
 
-    with tab1:
+    if students.empty:
 
-        students_df = load_students()
-
-        if students_df.empty:
-            st.info("No students have been added yet.")
-        else:
-
-            st.dataframe(
-                students_df,
-                use_container_width=True,
-                hide_index=True
-            )
-
-            st.download_button(
-                "⬇️ Download Student List",
-                students_df.to_csv(index=False).encode("utf-8"),
-                "fast_tutor_students.csv",
-                "text/csv"
-            )
-
-    with tab2:
-
-        with st.form("add_student_form"):
-
-            roll_no = st.text_input(
-                "Roll Number",
-                placeholder="e.g. CS-001"
-            )
-
-            student_name = st.text_input(
-                "Student Name",
-                placeholder="e.g. Ali Ahmed"
-            )
-
-            program = st.text_input(
-                "Program",
-                placeholder="e.g. BS Computer Science"
-            )
-
-            semester = st.text_input(
-                "Semester",
-                placeholder="e.g. 1"
-            )
-
-            section = st.text_input(
-                "Section",
-                placeholder="e.g. A"
-            )
-
-            submitted = st.form_submit_button(
-                "➕ Add Student",
-                use_container_width=True
-            )
-
-        if submitted:
-
-            if not roll_no or not student_name:
-
-                st.error(
-                    "Roll Number and Student Name are required."
-                )
-
-            else:
-
-                success = execute("""
-                    INSERT INTO students
-                    (roll_no, student_name, program, semester, section, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    roll_no.strip(),
-                    student_name.strip(),
-                    program.strip(),
-                    semester.strip(),
-                    section.strip(),
-                    datetime.now().isoformat()
-                ))
-
-                if success:
-                    st.success("Student added successfully.")
-                    st.rerun()
-
-
-# ============================================================
-# COURSES
-# ============================================================
-
-elif page == "📚 Courses":
-
-    st.title("📚 Course Management")
-
-    tab1, tab2 = st.tabs([
-        "Course List",
-        "Add Course"
-    ])
-
-    with tab1:
-
-        courses_df = load_courses()
-
-        if courses_df.empty:
-            st.info("No courses have been added.")
-        else:
-
-            st.dataframe(
-                courses_df,
-                use_container_width=True,
-                hide_index=True
-            )
-
-    with tab2:
-
-        with st.form("course_form"):
-
-            course_code = st.text_input(
-                "Course Code",
-                placeholder="CS101"
-            )
-
-            course_name = st.text_input(
-                "Course Name",
-                placeholder="Programming Fundamentals"
-            )
-
-            credit_hours = st.number_input(
-                "Credit Hours",
-                min_value=0.0,
-                max_value=10.0,
-                value=3.0,
-                step=0.5
-            )
-
-            semester = st.text_input(
-                "Semester",
-                placeholder="1"
-            )
-
-            submitted = st.form_submit_button(
-                "➕ Add Course",
-                use_container_width=True
-            )
-
-        if submitted:
-
-            if not course_code or not course_name:
-
-                st.error(
-                    "Course Code and Course Name are required."
-                )
-
-            else:
-
-                success = execute("""
-                    INSERT INTO courses
-                    (course_code, course_name, credit_hours, semester, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    course_code.strip().upper(),
-                    course_name.strip(),
-                    credit_hours,
-                    semester.strip(),
-                    datetime.now().isoformat()
-                ))
-
-                if success:
-                    st.success("Course added successfully.")
-                    st.rerun()
-
-
-# ============================================================
-# ASSESSMENTS
-# ============================================================
-
-elif page == "📝 Assessments":
-
-    st.title("📝 Assessment Management")
-
-    tab1, tab2 = st.tabs([
-        "Assessment List",
-        "Add Assessment"
-    ])
-
-    with tab1:
-
-        rows = execute("""
-            SELECT id, assessment_name, total_marks, created_at
-            FROM assessments
-            ORDER BY id DESC
-        """, fetch=True)
-
-        assessment_df = pd.DataFrame(
-            rows,
-            columns=[
-                "ID",
-                "Assessment",
-                "Total Marks",
-                "Created At"
-            ]
+        st.info(
+            "No students yet. Use 'Upload Students' "
+            "to import your student list."
         )
 
-        if assessment_df.empty:
-            st.info("No assessments created.")
-        else:
-            st.dataframe(
-                assessment_df,
-                use_container_width=True,
-                hide_index=True
-            )
+    else:
 
-    with tab2:
+        search = st.text_input(
+            "🔎 Search by roll number or student name"
+        )
 
-        with st.form("assessment_form"):
+        display = students.copy()
 
-            assessment_name = st.text_input(
-                "Assessment Name",
-                placeholder="Midterm Examination"
-            )
+        if search:
 
-            total_marks = st.number_input(
-                "Total Marks",
-                min_value=1.0,
-                value=100.0
-            )
+            display = display[
+                display["Roll Number"]
+                .astype(str)
+                .str.contains(
+                    search,
+                    case=False,
+                    na=False
+                )
+                |
+                display["Student Name"]
+                .astype(str)
+                .str.contains(
+                    search,
+                    case=False,
+                    na=False
+                )
+            ]
 
-            submitted = st.form_submit_button(
-                "➕ Add Assessment",
-                use_container_width=True
-            )
+        st.write(
+            f"Showing **{len(display)}** students"
+        )
 
-        if submitted:
-
-            if not assessment_name:
-
-                st.error("Assessment name is required.")
-
-            else:
-
-                success = execute("""
-                    INSERT INTO assessments
-                    (assessment_name, total_marks, created_at)
-                    VALUES (?, ?, ?)
-                """, (
-                    assessment_name.strip(),
-                    total_marks,
-                    datetime.now().isoformat()
-                ))
-
-                if success:
-                    st.success("Assessment added.")
-                    st.rerun()
+        st.dataframe(
+            display,
+            use_container_width=True,
+            hide_index=True
+        )
 
 
 # ============================================================
-# BULK STUDENT IMPORT
+# BULK STUDENT UPLOAD
 # ============================================================
 
-elif page == "📥 Bulk Student Import":
+elif page == "📥 Upload Students":
 
-    st.title("📥 Bulk Student Import")
+    st.title("📥 Upload Students")
 
     st.write(
-        "Upload one Excel or CSV file containing all your students. "
-        "You do not need to enter students one by one."
+        "Upload your complete student list using Excel or CSV."
     )
 
     st.info(
-        "Recommended columns: Roll Number, Student Name, Program, "
-        "Semester, Section"
+        "You can upload hundreds or thousands of students at once."
     )
 
-    sample_students = pd.DataFrame({
+    # --------------------------------------------------------
+    # TEMPLATE
+    # --------------------------------------------------------
+
+    template = pd.DataFrame({
         "Roll Number": [
             "CS001",
             "CS002",
@@ -769,9 +630,9 @@ elif page == "📥 Bulk Student Import":
             "BS Computer Science"
         ],
         "Semester": [
-            "1",
-            "1",
-            "1"
+            "3",
+            "3",
+            "3"
         ],
         "Section": [
             "A",
@@ -780,34 +641,43 @@ elif page == "📥 Bulk Student Import":
         ]
     })
 
-    st.subheader("📄 Required File Format")
+    st.subheader("📄 File Format")
 
     st.dataframe(
-        sample_students,
+        template,
         use_container_width=True,
         hide_index=True
     )
 
     st.download_button(
         "⬇️ Download Student Template",
-        sample_students.to_csv(index=False).encode("utf-8"),
-        "fast_tutor_student_template.csv",
+        template.to_csv(index=False).encode(),
+        "Fast_Tutor_Student_Template.csv",
         "text/csv"
     )
 
-    uploaded_file = st.file_uploader(
-        "Upload Student File",
-        type=["csv", "xlsx", "xls"]
+    st.divider()
+
+    uploaded = st.file_uploader(
+        "Choose Student Excel/CSV File",
+        type=["xlsx", "xls", "csv"]
     )
 
-    if uploaded_file:
+    if uploaded:
 
         try:
 
-            if uploaded_file.name.lower().endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
+            if uploaded.name.lower().endswith(".csv"):
+
+                df = pd.read_csv(uploaded)
+
             else:
-                df = pd.read_excel(uploaded_file)
+
+                df = pd.read_excel(uploaded)
+
+            st.success(
+                f"File loaded successfully — {len(df)} rows found."
+            )
 
             st.subheader("Preview")
 
@@ -820,12 +690,11 @@ elif page == "📥 Bulk Student Import":
             roll_col = find_column(
                 df,
                 [
-                    "roll number",
+                    "roll_number",
                     "roll_no",
                     "roll",
-                    "registration number",
+                    "registration_number",
                     "registration_no",
-                    "student id",
                     "student_id"
                 ]
             )
@@ -833,10 +702,9 @@ elif page == "📥 Bulk Student Import":
             name_col = find_column(
                 df,
                 [
-                    "student name",
                     "student_name",
-                    "name",
-                    "student"
+                    "student",
+                    "name"
                 ]
             )
 
@@ -844,8 +712,8 @@ elif page == "📥 Bulk Student Import":
                 df,
                 [
                     "program",
-                    "degree",
-                    "programme"
+                    "programme",
+                    "degree"
                 ]
             )
 
@@ -869,20 +737,19 @@ elif page == "📥 Bulk Student Import":
             if not roll_col:
 
                 st.error(
-                    "Could not find a Roll Number column."
+                    "Roll Number column was not found."
                 )
 
             elif not name_col:
 
                 st.error(
-                    "Could not find a Student Name column."
+                    "Student Name column was not found."
                 )
 
             else:
 
                 st.success(
-                    f"Detected Roll Number: {roll_col} | "
-                    f"Student Name: {name_col}"
+                    f"Detected: {roll_col} + {name_col}"
                 )
 
                 if st.button(
@@ -891,15 +758,19 @@ elif page == "📥 Bulk Student Import":
                     use_container_width=True
                 ):
 
-                    inserted = 0
-                    updated = 0
+                    new_students = 0
+                    updated_students = 0
                     skipped = 0
 
                     for _, row in df.iterrows():
 
-                        roll = str(row[roll_col]).strip()
+                        roll = str(
+                            row[roll_col]
+                        ).strip()
 
-                        name = str(row[name_col]).strip()
+                        name = str(
+                            row[name_col]
+                        ).strip()
 
                         if (
                             not roll
@@ -907,6 +778,7 @@ elif page == "📥 Bulk Student Import":
                             or not name
                             or name.lower() == "nan"
                         ):
+
                             skipped += 1
                             continue
 
@@ -931,63 +803,79 @@ elif page == "📥 Bulk Student Import":
                                 row[section_col]
                             ).strip()
 
-                        existing = execute("""
+                        existing = run_query(
+                            """
                             SELECT id
                             FROM students
                             WHERE roll_no = ?
-                        """, (roll,), fetch=True)
+                            """,
+                            (roll,),
+                            fetch=True
+                        )
 
                         if existing:
 
-                            execute("""
+                            run_query(
+                                """
                                 UPDATE students
                                 SET student_name = ?,
                                     program = ?,
                                     semester = ?,
                                     section = ?
                                 WHERE roll_no = ?
-                            """, (
-                                name,
-                                program,
-                                semester,
-                                section,
-                                roll
-                            ))
+                                """,
+                                (
+                                    name,
+                                    program,
+                                    semester,
+                                    section,
+                                    roll
+                                )
+                            )
 
-                            updated += 1
+                            updated_students += 1
 
                         else:
 
-                            success = execute("""
+                            success = run_query(
+                                """
                                 INSERT INTO students
-                                (roll_no, student_name, program,
-                                 semester, section, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            """, (
-                                roll,
-                                name,
-                                program,
-                                semester,
-                                section,
-                                datetime.now().isoformat()
-                            ))
+                                (
+                                    roll_no,
+                                    student_name,
+                                    program,
+                                    semester,
+                                    section
+                                )
+                                VALUES (?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    roll,
+                                    name,
+                                    program,
+                                    semester,
+                                    section
+                                )
+                            )
 
                             if success:
-                                inserted += 1
+                                new_students += 1
                             else:
                                 skipped += 1
 
                     st.success(
-                        f"Import complete: {inserted} new students, "
-                        f"{updated} updated, {skipped} skipped."
+                        f"Import complete! "
+                        f"{new_students} new students, "
+                        f"{updated_students} updated, "
+                        f"{skipped} skipped."
                     )
 
                     st.rerun()
 
-        except Exception as e:
+        except Exception as error:
 
             st.error(
-                f"Could not read the file: {e}"
+                f"Could not read the file: {error}"
             )
 
 
@@ -995,23 +883,24 @@ elif page == "📥 Bulk Student Import":
 # BULK MARKS UPLOAD
 # ============================================================
 
-elif page == "📊 Bulk Marks Upload":
+elif page == "📊 Upload Marks":
 
-    st.title("📊 Bulk Marks Upload")
+    st.title("📊 Upload Marks")
 
     st.write(
-        "Upload all student marks at once using Excel or CSV. "
-        "You do NOT need to enter marks individually."
+        "Upload the complete marks sheet. "
+        "There is no need to enter marks student-by-student."
     )
 
-    st.warning(
-        "Make sure the Roll Number in the marks file matches "
-        "the Roll Number in the student database."
+    st.success(
+        "Fast Tutor automatically calculates percentage and grade."
     )
 
-    st.subheader("📄 Recommended Marks File")
+    # --------------------------------------------------------
+    # TEMPLATE
+    # --------------------------------------------------------
 
-    sample_marks = pd.DataFrame({
+    marks_template = pd.DataFrame({
         "Roll Number": [
             "CS001",
             "CS002",
@@ -1039,23 +928,27 @@ elif page == "📊 Bulk Marks Upload":
         ]
     })
 
+    st.subheader("📄 Marks File Format")
+
     st.dataframe(
-        sample_marks,
+        marks_template,
         use_container_width=True,
         hide_index=True
     )
 
     st.download_button(
         "⬇️ Download Marks Template",
-        sample_marks.to_csv(index=False).encode("utf-8"),
-        "fast_tutor_marks_template.csv",
+        marks_template.to_csv(index=False).encode(),
+        "Fast_Tutor_Marks_Template.csv",
         "text/csv"
     )
 
+    st.divider()
+
     uploaded_marks = st.file_uploader(
-        "Upload Complete Marks File",
-        type=["csv", "xlsx", "xls"],
-        key="marks_upload"
+        "Choose Complete Marks Excel/CSV File",
+        type=["xlsx", "xls", "csv"],
+        key="marks_file"
     )
 
     if uploaded_marks:
@@ -1063,60 +956,67 @@ elif page == "📊 Bulk Marks Upload":
         try:
 
             if uploaded_marks.name.lower().endswith(".csv"):
-                marks_df = pd.read_csv(uploaded_marks)
-            else:
-                marks_df = pd.read_excel(uploaded_marks)
 
-            st.subheader("Marks Preview")
+                marks = pd.read_csv(
+                    uploaded_marks
+                )
+
+            else:
+
+                marks = pd.read_excel(
+                    uploaded_marks
+                )
+
+            st.success(
+                f"File loaded successfully — {len(marks)} rows found."
+            )
+
+            st.subheader("Preview")
 
             st.dataframe(
-                marks_df.head(30),
+                marks.head(30),
                 use_container_width=True,
                 hide_index=True
             )
 
             roll_col = find_column(
-                marks_df,
+                marks,
                 [
-                    "roll number",
+                    "roll_number",
                     "roll_no",
                     "roll",
-                    "registration number",
+                    "registration_number",
                     "registration_no",
-                    "student id",
                     "student_id"
                 ]
             )
 
             course_col = find_column(
-                marks_df,
+                marks,
                 [
-                    "course code",
                     "course_code",
                     "course",
-                    "subject code",
+                    "subject_code",
                     "subject"
                 ]
             )
 
             assessment_col = find_column(
-                marks_df,
+                marks,
                 [
                     "assessment",
                     "exam",
-                    "exam type",
-                    "assessment name",
+                    "exam_type",
                     "test",
                     "paper"
                 ]
             )
 
             obtained_col = find_column(
-                marks_df,
+                marks,
                 [
-                    "obtained marks",
                     "obtained_marks",
-                    "marks obtained",
+                    "marks_obtained",
                     "marks",
                     "score",
                     "obtained"
@@ -1124,12 +1024,10 @@ elif page == "📊 Bulk Marks Upload":
             )
 
             total_col = find_column(
-                marks_df,
+                marks,
                 [
-                    "total marks",
                     "total_marks",
-                    "maximum marks",
-                    "max marks",
+                    "maximum_marks",
                     "max_marks",
                     "total"
                 ]
@@ -1152,19 +1050,11 @@ elif page == "📊 Bulk Marks Upload":
             if missing:
 
                 st.error(
-                    "Missing required columns: "
+                    "Missing columns: "
                     + ", ".join(missing)
                 )
 
             else:
-
-                st.success(
-                    "All required columns detected."
-                )
-
-                st.write(
-                    f"**Rows ready for import:** {len(marks_df)}"
-                )
 
                 if st.button(
                     "🚀 UPLOAD ALL MARKS",
@@ -1172,12 +1062,18 @@ elif page == "📊 Bulk Marks Upload":
                     use_container_width=True
                 ):
 
-                    inserted = 0
+                    added = 0
                     updated = 0
                     skipped = 0
                     errors = []
 
-                    for index, row in marks_df.iterrows():
+                    progress = st.progress(0)
+
+                    total_rows = len(marks)
+
+                    for number, (_, row) in enumerate(
+                        marks.iterrows()
+                    ):
 
                         try:
 
@@ -1193,79 +1089,49 @@ elif page == "📊 Bulk Marks Upload":
                                 row[assessment_col]
                             ).strip()
 
-                            obtained = safe_float(
+                            obtained = float(
                                 row[obtained_col]
                             )
 
                             if total_col:
 
-                                total = safe_float(
-                                    row[total_col],
-                                    100
+                                total = float(
+                                    row[total_col]
                                 )
 
                             else:
 
-                                total = 100
-
-                            if (
-                                not roll
-                                or roll.lower() == "nan"
-                                or not course
-                                or not assessment
-                            ):
-
-                                skipped += 1
-                                continue
-
-                            student_exists = execute("""
-                                SELECT id
-                                FROM students
-                                WHERE roll_no = ?
-                            """, (roll,), fetch=True)
-
-                            if not student_exists:
-
-                                skipped += 1
-
-                                errors.append(
-                                    f"Row {index + 2}: "
-                                    f"Student {roll} does not exist."
-                                )
-
-                                continue
-
-                            course_exists = execute("""
-                                SELECT id
-                                FROM courses
-                                WHERE course_code = ?
-                            """, (course,), fetch=True)
-
-                            if not course_exists:
-
-                                # Automatically create the course
-                                # if it isn't already registered.
-                                execute("""
-                                    INSERT OR IGNORE INTO courses
-                                    (course_code, course_name,
-                                     credit_hours, semester,
-                                     created_at)
-                                    VALUES (?, ?, ?, ?, ?)
-                                """, (
-                                    course,
-                                    course,
-                                    0,
-                                    "",
-                                    datetime.now().isoformat()
-                                ))
+                                total = 100.0
 
                             if total <= 0:
 
                                 skipped += 1
 
                                 errors.append(
-                                    f"Row {index + 2}: "
-                                    f"Total marks must be greater than zero."
+                                    f"Row {number + 2}: "
+                                    "Total marks must be greater than 0."
+                                )
+
+                                continue
+
+                            # Check student
+                            student = run_query(
+                                """
+                                SELECT id
+                                FROM students
+                                WHERE roll_no = ?
+                                """,
+                                (roll,),
+                                fetch=True
+                            )
+
+                            if not student:
+
+                                skipped += 1
+
+                                errors.append(
+                                    f"Row {number + 2}: "
+                                    f"Student {roll} not found."
                                 )
 
                                 continue
@@ -1274,75 +1140,97 @@ elif page == "📊 Bulk Marks Upload":
                                 obtained / total
                             ) * 100
 
-                            grade = get_grade(
+                            grade = calculate_grade(
                                 percentage
                             )
 
-                            existing = execute("""
+                            # Create course automatically
+                            run_query(
+                                """
+                                INSERT OR IGNORE INTO courses
+                                (
+                                    course_code,
+                                    course_name
+                                )
+                                VALUES (?, ?)
+                                """,
+                                (
+                                    course,
+                                    course
+                                )
+                            )
+
+                            existing = run_query(
+                                """
                                 SELECT id
                                 FROM results
                                 WHERE roll_no = ?
                                 AND course_code = ?
                                 AND assessment = ?
-                            """, (
-                                roll,
-                                course,
-                                assessment
-                            ), fetch=True)
-
-                            if existing:
-
-                                execute("""
-                                    UPDATE results
-                                    SET obtained_marks = ?,
-                                        total_marks = ?,
-                                        percentage = ?,
-                                        grade = ?,
-                                        entered_at = ?
-                                    WHERE roll_no = ?
-                                    AND course_code = ?
-                                    AND assessment = ?
-                                """, (
-                                    obtained,
-                                    total,
-                                    percentage,
-                                    grade,
-                                    datetime.now().isoformat(),
+                                """,
+                                (
                                     roll,
                                     course,
                                     assessment
-                                ))
+                                ),
+                                fetch=True
+                            )
+
+                            if existing:
+
+                                run_query(
+                                    """
+                                    UPDATE results
+                                    SET obtained = ?,
+                                        total = ?,
+                                        percentage = ?,
+                                        grade = ?
+                                    WHERE roll_no = ?
+                                    AND course_code = ?
+                                    AND assessment = ?
+                                    """,
+                                    (
+                                        obtained,
+                                        total,
+                                        percentage,
+                                        grade,
+                                        roll,
+                                        course,
+                                        assessment
+                                    )
+                                )
 
                                 updated += 1
 
                             else:
 
-                                success = execute("""
+                                success = run_query(
+                                    """
                                     INSERT INTO results
                                     (
                                         roll_no,
                                         course_code,
                                         assessment,
-                                        obtained_marks,
-                                        total_marks,
+                                        obtained,
+                                        total,
                                         percentage,
-                                        grade,
-                                        entered_at
+                                        grade
                                     )
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                """, (
-                                    roll,
-                                    course,
-                                    assessment,
-                                    obtained,
-                                    total,
-                                    percentage,
-                                    grade,
-                                    datetime.now().isoformat()
-                                ))
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                    """,
+                                    (
+                                        roll,
+                                        course,
+                                        assessment,
+                                        obtained,
+                                        total,
+                                        percentage,
+                                        grade
+                                    )
+                                )
 
                                 if success:
-                                    inserted += 1
+                                    added += 1
                                 else:
                                     skipped += 1
 
@@ -1351,13 +1239,17 @@ elif page == "📊 Bulk Marks Upload":
                             skipped += 1
 
                             errors.append(
-                                f"Row {index + 2}: "
+                                f"Row {number + 2}: "
                                 f"{row_error}"
                             )
 
+                        progress.progress(
+                            (number + 1) / total_rows
+                        )
+
                     st.success(
-                        f"Marks upload complete: "
-                        f"{inserted} new results, "
+                        f"Marks uploaded successfully! "
+                        f"{added} new results, "
                         f"{updated} updated, "
                         f"{skipped} skipped."
                     )
@@ -1365,7 +1257,7 @@ elif page == "📊 Bulk Marks Upload":
                     if errors:
 
                         with st.expander(
-                            f"⚠️ {len(errors)} rows need attention"
+                            "⚠️ Rows that need attention"
                         ):
 
                             for error in errors[:100]:
@@ -1373,10 +1265,10 @@ elif page == "📊 Bulk Marks Upload":
 
                     st.rerun()
 
-        except Exception as e:
+        except Exception as error:
 
             st.error(
-                f"Could not read marks file: {e}"
+                f"Could not read the marks file: {error}"
             )
 
 
@@ -1386,15 +1278,15 @@ elif page == "📊 Bulk Marks Upload":
 
 elif page == "📈 Results":
 
-    st.title("📈 Student Results")
+    st.title("📈 Results")
 
-    results_df = load_results()
+    results = get_results()
 
-    if results_df.empty:
+    if results.empty:
 
         st.info(
-            "No results available. Upload marks using "
-            "'Bulk Marks Upload'."
+            "No results available yet. "
+            "Upload marks first."
         )
 
     else:
@@ -1403,37 +1295,42 @@ elif page == "📈 Results":
 
         with col1:
 
-            student_filter = st.text_input(
-                "Search Roll Number"
+            search = st.text_input(
+                "🔎 Search Student"
             )
 
         with col2:
 
             course_filter = st.text_input(
-                "Search Course"
+                "📚 Course"
             )
 
         with col3:
 
             grade_filter = st.selectbox(
-                "Grade",
+                "🎯 Grade",
                 ["All"] + sorted(
-                    results_df["Grade"]
-                    .dropna()
-                    .unique()
-                    .tolist()
+                    results["Grade"].unique()
                 )
             )
 
-        filtered = results_df.copy()
+        filtered = results.copy()
 
-        if student_filter:
+        if search:
 
             filtered = filtered[
                 filtered["Roll Number"]
                 .astype(str)
                 .str.contains(
-                    student_filter,
+                    search,
+                    case=False,
+                    na=False
+                )
+                |
+                filtered["Student Name"]
+                .astype(str)
+                .str.contains(
+                    search,
                     case=False,
                     na=False
                 )
@@ -1464,239 +1361,252 @@ elif page == "📈 Results":
         )
 
         st.download_button(
-            "⬇️ Download Filtered Results",
-            filtered.to_csv(index=False).encode("utf-8"),
-            "fast_tutor_results.csv",
+            "⬇️ Download Results",
+            filtered.to_csv(
+                index=False
+            ).encode(),
+            "Fast_Tutor_Results.csv",
             "text/csv"
         )
 
 
 # ============================================================
-# STUDENT TRANSCRIPT
+# STUDENT REPORT
 # ============================================================
 
-elif page == "📋 Student Transcript":
+elif page == "🧾 Student Report":
 
-    st.title("📋 Student Transcript")
+    st.title("🧾 Student Report")
 
-    students_df = load_students()
+    students = get_students()
 
-    if students_df.empty:
+    if students.empty:
 
         st.info(
-            "Import students first."
+            "No students available."
         )
 
     else:
 
-        roll_numbers = students_df[
-            "Roll Number"
-        ].tolist()
-
-        selected_roll = st.selectbox(
+        selected = st.selectbox(
             "Select Student",
-            roll_numbers
+            students["Roll Number"].tolist(),
+            format_func=lambda x:
+                f"{x} — "
+                f"{students.loc[students['Roll Number'] == x, 'Student Name'].iloc[0]}"
         )
 
-        student_info = students_df[
-            students_df["Roll Number"] == selected_roll
+        student = students[
+            students["Roll Number"] == selected
+        ].iloc[0]
+
+        st.markdown(
+            f"""
+            ### 🎓 {student['Student Name']}
+
+            **Roll Number:** {student['Roll Number']}  
+            **Program:** {student['Program']}  
+            **Semester:** {student['Semester']}  
+            **Section:** {student['Section']}
+            """
+        )
+
+        student_results = results = get_results()
+
+        student_results = student_results[
+            student_results["Roll Number"] == selected
         ]
 
-        if not student_info.empty:
+        if student_results.empty:
 
-            student = student_info.iloc[0]
+            st.warning(
+                "No marks have been uploaded for this student."
+            )
 
-            st.subheader(
-                f"🎓 {student['Student Name']}"
+        else:
+
+            average = student_results[
+                "Percentage"
+            ].mean()
+
+            passed = len(
+                student_results[
+                    student_results["Grade"] != "F"
+                ]
+            )
+
+            failed = len(
+                student_results[
+                    student_results["Grade"] == "F"
+                ]
             )
 
             c1, c2, c3 = st.columns(3)
 
             with c1:
-                st.write(
-                    f"**Roll Number:** {student['Roll Number']}"
-                )
-
-            with c2:
-                st.write(
-                    f"**Program:** {student['Program']}"
-                )
-
-            with c3:
-                st.write(
-                    f"**Semester:** {student['Semester']}"
-                )
-
-            transcript = execute("""
-                SELECT
-                    course_code,
-                    assessment,
-                    obtained_marks,
-                    total_marks,
-                    percentage,
-                    grade
-                FROM results
-                WHERE roll_no = ?
-                ORDER BY course_code
-            """, (selected_roll,), fetch=True)
-
-            transcript_df = pd.DataFrame(
-                transcript,
-                columns=[
-                    "Course Code",
-                    "Assessment",
-                    "Obtained Marks",
-                    "Total Marks",
-                    "Percentage",
-                    "Grade"
-                ]
-            )
-
-            if transcript_df.empty:
-
-                st.info(
-                    "No marks found for this student."
-                )
-
-            else:
-
-                st.dataframe(
-                    transcript_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                average = transcript_df[
-                    "Percentage"
-                ].mean()
-
                 st.metric(
-                    "Overall Average",
+                    "Average",
                     f"{average:.2f}%"
                 )
 
+            with c2:
+                st.metric(
+                    "Passed",
+                    passed
+                )
 
-# ============================================================
-# PERFORMANCE ANALYSIS
-# ============================================================
+            with c3:
+                st.metric(
+                    "Failed",
+                    failed
+                )
 
-elif page == "📊 Performance Analysis":
+            st.divider()
 
-    st.title("📊 Performance Analysis")
-
-    results_df = load_results()
-
-    if results_df.empty:
-
-        st.info(
-            "Upload student marks first."
-        )
-
-    else:
-
-        st.subheader("Course Performance")
-
-        course_performance = (
-            results_df
-            .groupby(
-                ["Course Code", "Course Name"]
-            )["Percentage"]
-            .agg(
-                ["mean", "min", "max", "count"]
-            )
-            .reset_index()
-        )
-
-        course_performance.columns = [
-            "Course Code",
-            "Course Name",
-            "Average %",
-            "Lowest %",
-            "Highest %",
-            "Students"
-        ]
-
-        st.dataframe(
-            course_performance,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        st.subheader("📈 Average Performance by Course")
-
-        chart_data = (
-            results_df
-            .groupby("Course Code")["Percentage"]
-            .mean()
-        )
-
-        st.bar_chart(chart_data)
-
-        st.subheader("⚠️ Students Requiring Attention")
-
-        weak_students = (
-            results_df[
-                results_df["Percentage"] < 50
-            ]
-            .groupby(
-                ["Roll Number", "Student Name"]
-            )
-            .agg(
-                Weak_Assessments=("Percentage", "count"),
-                Average_Percentage=("Percentage", "mean")
-            )
-            .reset_index()
-        )
-
-        if weak_students.empty:
-
-            st.success(
-                "No results below 50%."
-            )
-
-        else:
+            st.subheader("📊 Marks")
 
             st.dataframe(
-                weak_students,
+                student_results,
                 use_container_width=True,
                 hide_index=True
             )
 
+            st.subheader("📈 Performance")
+
+            chart = (
+                student_results
+                .set_index("Course Code")[
+                    "Percentage"
+                ]
+            )
+
+            st.bar_chart(chart)
+
 
 # ============================================================
-# IMPORT / EXPORT
+# COURSES
 # ============================================================
 
-elif page == "📤 Import / Export":
+elif page == "📚 Courses":
 
-    st.title("📤 Import / Export")
+    st.title("📚 Courses")
 
-    st.subheader("Export Complete Database")
+    courses = get_courses()
 
-    students_df = load_students()
-    courses_df = load_courses()
-    results_df = load_results()
+    st.subheader("Add Course")
 
-    output = io.BytesIO()
+    with st.form("course_form"):
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            course_code = st.text_input(
+                "Course Code",
+                placeholder="CS101"
+            )
+
+        with col2:
+
+            course_name = st.text_input(
+                "Course Name",
+                placeholder="Programming Fundamentals"
+            )
+
+        submitted = st.form_submit_button(
+            "➕ Add Course",
+            use_container_width=True
+        )
+
+    if submitted:
+
+        if not course_code or not course_name:
+
+            st.error(
+                "Please enter both course code and course name."
+            )
+
+        else:
+
+            success = run_query(
+                """
+                INSERT INTO courses
+                (course_code, course_name)
+                VALUES (?, ?)
+                """,
+                (
+                    course_code.strip().upper(),
+                    course_name.strip()
+                )
+            )
+
+            if success:
+
+                st.success(
+                    "Course added successfully."
+                )
+
+                st.rerun()
+
+            else:
+
+                st.warning(
+                    "This course already exists."
+                )
+
+    st.divider()
+
+    st.subheader("Course List")
+
+    if courses.empty:
+
+        st.info(
+            "No courses available."
+        )
+
+    else:
+
+        st.dataframe(
+            courses,
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+# ============================================================
+# EXPORT
+# ============================================================
+
+elif page == "📤 Export":
+
+    st.title("📤 Export Data")
+
+    students = get_students()
+    courses = get_courses()
+    results = get_results()
+
+    st.subheader("Download Excel Report")
+
+    excel_file = BytesIO()
 
     with pd.ExcelWriter(
-        output,
+        excel_file,
         engine="openpyxl"
     ) as writer:
 
-        students_df.to_excel(
+        students.to_excel(
             writer,
             index=False,
             sheet_name="Students"
         )
 
-        courses_df.to_excel(
+        courses.to_excel(
             writer,
             index=False,
             sheet_name="Courses"
         )
 
-        results_df.to_excel(
+        results.to_excel(
             writer,
             index=False,
             sheet_name="Results"
@@ -1704,168 +1614,64 @@ elif page == "📤 Import / Export":
 
     st.download_button(
         "⬇️ Download Complete Excel Report",
-        output.getvalue(),
-        "fast_tutor_complete_database.xlsx",
+        excel_file.getvalue(),
+        "Fast_Tutor_Complete_Report.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
 
     st.divider()
 
-    st.subheader("CSV Exports")
+    st.subheader("CSV Downloads")
 
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
 
-    with col1:
-
-        st.download_button(
-            "Students CSV",
-            students_df.to_csv(
-                index=False
-            ).encode("utf-8"),
-            "students.csv",
-            "text/csv"
-        )
-
-    with col2:
+    with c1:
 
         st.download_button(
-            "Courses CSV",
-            courses_df.to_csv(
+            "👨‍🎓 Students CSV",
+            students.to_csv(
                 index=False
-            ).encode("utf-8"),
-            "courses.csv",
-            "text/csv"
+            ).encode(),
+            "Fast_Tutor_Students.csv",
+            "text/csv",
+            use_container_width=True
         )
 
-    with col3:
+    with c2:
 
         st.download_button(
-            "Results CSV",
-            results_df.to_csv(
+            "📚 Courses CSV",
+            courses.to_csv(
                 index=False
-            ).encode("utf-8"),
-            "results.csv",
-            "text/csv"
+            ).encode(),
+            "Fast_Tutor_Courses.csv",
+            "text/csv",
+            use_container_width=True
         )
 
+    with c3:
 
-# ============================================================
-# SETTINGS
-# ============================================================
-
-elif page == "⚙️ Settings":
-
-    st.title("⚙️ Fast Tutor Settings")
-
-    institute_name = st.text_input(
-        "Institute / University Name"
-    )
-
-    academic_year = st.text_input(
-        "Academic Year",
-        placeholder="2026-2027"
-    )
-
-    semester = st.text_input(
-        "Current Semester",
-        placeholder="Fall 2026"
-    )
-
-    if st.button(
-        "💾 Save Settings",
-        use_container_width=True
-    ):
-
-        existing = execute(
-            "SELECT id FROM settings WHERE id = 1",
-            fetch=True
+        st.download_button(
+            "📊 Results CSV",
+            results.to_csv(
+                index=False
+            ).encode(),
+            "Fast_Tutor_Results.csv",
+            "text/csv",
+            use_container_width=True
         )
-
-        if existing:
-
-            execute("""
-                UPDATE settings
-                SET institute_name = ?,
-                    semester = ?,
-                    academic_year = ?
-                WHERE id = 1
-            """, (
-                institute_name,
-                semester,
-                academic_year
-            ))
-
-        else:
-
-            execute("""
-                INSERT INTO settings
-                (
-                    id,
-                    institute_name,
-                    semester,
-                    academic_year
-                )
-                VALUES (1, ?, ?, ?)
-            """, (
-                institute_name,
-                semester,
-                academic_year
-            ))
-
-        st.success(
-            "Settings saved successfully."
-        )
-
-    st.divider()
-
-    st.subheader("Database Information")
-
-    student_count = execute(
-        "SELECT COUNT(*) FROM students",
-        fetch=True
-    )[0][0]
-
-    result_count = execute(
-        "SELECT COUNT(*) FROM results",
-        fetch=True
-    )[0][0]
-
-    course_count = execute(
-        "SELECT COUNT(*) FROM courses",
-        fetch=True
-    )[0][0]
-
-    st.write(
-        f"👨‍🎓 Students: **{student_count}**"
-    )
-
-    st.write(
-        f"📚 Courses: **{course_count}**"
-    )
-
-    st.write(
-        f"📊 Results: **{result_count}**"
-    )
-
-    st.divider()
-
-    st.info(
-        "Fast Tutor is designed for bulk student and marks management. "
-        "You can upload complete Excel/CSV files instead of entering "
-        "students and marks individually."
-    )
 
 
 # ============================================================
 # FOOTER
 # ============================================================
 
-st.sidebar.divider()
+st.divider()
 
-st.sidebar.markdown(
-    "<div style='text-align:center; color:gray;'>"
-    "© 2026 Fast Tutor"
+st.markdown(
+    "<div style='text-align:center;color:#888;'>"
+    "🎓 <b>Fast Tutor</b> — Student Marks & Results Management"
     "</div>",
     unsafe_allow_html=True
 )
