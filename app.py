@@ -2,27 +2,28 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from io import BytesIO
-import os
 
 
 # ============================================================
 # FAST TUTOR
+# Student Performance System
 # ============================================================
 
 st.set_page_config(
     page_title="Fast Tutor",
     page_icon="🎓",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 
 # ============================================================
 # DATABASE
-# IMPORTANT:
-# Streamlit Cloud project folders can be read-only.
-# Therefore the database is stored in /tmp.
 # ============================================================
 
+# IMPORTANT:
+# Streamlit Cloud may not allow writing to the project folder.
+# Therefore the SQLite database is stored in /tmp.
 DB_PATH = "/tmp/fast_tutor.db"
 
 
@@ -34,6 +35,10 @@ def get_database():
         check_same_thread=False
     )
 
+    # --------------------------------------------------------
+    # COURSES
+    # --------------------------------------------------------
+
     connection.execute("""
         CREATE TABLE IF NOT EXISTS courses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +48,10 @@ def get_database():
             semester TEXT DEFAULT ''
         )
     """)
+
+    # --------------------------------------------------------
+    # STUDENTS
+    # --------------------------------------------------------
 
     connection.execute("""
         CREATE TABLE IF NOT EXISTS students (
@@ -55,6 +64,10 @@ def get_database():
         )
     """)
 
+    # --------------------------------------------------------
+    # ASSESSMENTS
+    # --------------------------------------------------------
+
     connection.execute("""
         CREATE TABLE IF NOT EXISTS assessments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +79,10 @@ def get_database():
         )
     """)
 
+    # --------------------------------------------------------
+    # CLOs
+    # --------------------------------------------------------
+
     connection.execute("""
         CREATE TABLE IF NOT EXISTS clos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,6 +93,10 @@ def get_database():
         )
     """)
 
+    # --------------------------------------------------------
+    # PLOs
+    # --------------------------------------------------------
+
     connection.execute("""
         CREATE TABLE IF NOT EXISTS plos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,6 +104,10 @@ def get_database():
             description TEXT DEFAULT ''
         )
     """)
+
+    # --------------------------------------------------------
+    # CLO-PLO MAPPING
+    # --------------------------------------------------------
 
     connection.execute("""
         CREATE TABLE IF NOT EXISTS mappings (
@@ -93,6 +118,10 @@ def get_database():
             strength INTEGER DEFAULT 0
         )
     """)
+
+    # --------------------------------------------------------
+    # RESULTS
+    # --------------------------------------------------------
 
     connection.execute("""
         CREATE TABLE IF NOT EXISTS results (
@@ -117,7 +146,7 @@ db = get_database()
 
 
 # ============================================================
-# DATABASE HELPERS
+# DATABASE FUNCTIONS
 # ============================================================
 
 def execute(sql, values=()):
@@ -176,13 +205,14 @@ def one(sql, values=()):
     )
 
     if rows:
+
         return rows[0]
 
     return None
 
 
 # ============================================================
-# HELPERS
+# GENERAL FUNCTIONS
 # ============================================================
 
 def clean(value):
@@ -215,9 +245,10 @@ def number(value, default=0):
         return default
 
 
-def get_percentage(obtained, total):
+def percentage(obtained, total):
 
     if total <= 0:
+
         return 0
 
     return round(
@@ -226,7 +257,7 @@ def get_percentage(obtained, total):
     )
 
 
-def get_grade(mark):
+def grade(mark):
 
     if mark >= 90:
         return "A+"
@@ -260,18 +291,39 @@ def make_df(rows, columns):
     )
 
 
-def read_uploaded_file(uploaded):
+def read_file(uploaded_file):
 
-    if uploaded is None:
+    if uploaded_file is None:
+
         return None
 
     try:
 
-        if uploaded.name.lower().endswith(".csv"):
+        filename = uploaded_file.name.lower()
 
-            return pd.read_csv(uploaded)
+        if filename.endswith(".csv"):
 
-        return pd.read_excel(uploaded)
+            return pd.read_csv(
+                uploaded_file
+            )
+
+        if filename.endswith(".xlsx"):
+
+            return pd.read_excel(
+                uploaded_file
+            )
+
+        if filename.endswith(".xls"):
+
+            return pd.read_excel(
+                uploaded_file
+            )
+
+        st.error(
+            "Please upload a CSV or Excel file."
+        )
+
+        return None
 
     except Exception as error:
 
@@ -286,36 +338,191 @@ def read_uploaded_file(uploaded):
 # CSS
 # ============================================================
 
-st.markdown("""
-<style>
+st.markdown(
+    """
+    <style>
 
-.main-title {
-    font-size: 32px;
-    font-weight: 900;
-    color: #0795D1;
-}
+    /* Main page */
 
-.sub-title {
-    color: #667085;
-    font-size: 14px;
-    margin-bottom: 25px;
-}
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+    }
 
-.section-title {
-    font-size: 28px;
-    font-weight: 800;
-    color: #172B4D;
-}
 
-.card {
-    padding: 20px;
-    border-radius: 15px;
-    background: #F7FAFC;
-    border: 1px solid #E5E7EB;
-}
+    /* Sidebar */
 
-</style>
-""", unsafe_allow_html=True)
+    section[data-testid="stSidebar"] {
+        background-color: #F8FBFD;
+    }
+
+
+    /* Headings */
+
+    h1, h2, h3 {
+        color: #172B4D;
+    }
+
+
+    /* Metric cards */
+
+    div[data-testid="stMetric"] {
+
+        background: white;
+
+        border: 1px solid #E5E7EB;
+
+        padding: 15px;
+
+        border-radius: 15px;
+
+        box-shadow:
+            0 3px 12px
+            rgba(0,0,0,0.04);
+    }
+
+
+    /* Buttons */
+
+    .stButton button {
+
+        border-radius: 10px;
+
+        font-weight: 600;
+    }
+
+
+    /* Dataframes */
+
+    div[data-testid="stDataFrame"] {
+
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+
+    /* Hero */
+
+    .fast-hero {
+
+        background:
+        linear-gradient(
+            135deg,
+            #0795D1,
+            #0877A6
+        );
+
+        padding: 32px;
+
+        border-radius: 22px;
+
+        color: white;
+
+        margin-bottom: 25px;
+
+        box-shadow:
+        0 10px 30px
+        rgba(7,149,209,0.20);
+    }
+
+
+    .fast-hero-title {
+
+        font-size: 34px;
+
+        font-weight: 900;
+
+        margin-bottom: 8px;
+    }
+
+
+    .fast-hero-text {
+
+        font-size: 16px;
+
+        line-height: 1.6;
+
+        opacity: 0.95;
+    }
+
+
+    .small-card {
+
+        background: white;
+
+        border: 1px solid #E5E7EB;
+
+        border-radius: 16px;
+
+        padding: 20px;
+
+        min-height: 130px;
+
+        box-shadow:
+        0 4px 14px
+        rgba(0,0,0,0.04);
+    }
+
+
+    .small-card-icon {
+
+        font-size: 30px;
+    }
+
+
+    .small-card-title {
+
+        color: #667085;
+
+        font-size: 13px;
+
+        margin-top: 7px;
+    }
+
+
+    .small-card-number {
+
+        color: #0795D1;
+
+        font-size: 30px;
+
+        font-weight: 900;
+    }
+
+
+    .section-heading {
+
+        font-size: 23px;
+
+        font-weight: 800;
+
+        color: #172B4D;
+
+        margin-top: 25px;
+
+        margin-bottom: 15px;
+    }
+
+
+    .tip-box {
+
+        background: #F3FAFE;
+
+        border-left: 5px solid #0795D1;
+
+        padding: 18px;
+
+        border-radius: 12px;
+
+        color: #475467;
+
+        margin-top: 20px;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
 # ============================================================
@@ -323,30 +530,65 @@ st.markdown("""
 # ============================================================
 
 st.sidebar.markdown(
-    '<div class="main-title">FAST TUTOR</div>',
+    """
+    <div style="
+        text-align:center;
+        padding:10px 5px 22px 5px;
+    ">
+
+        <div style="
+            font-size:30px;
+            font-weight:900;
+            color:#0795D1;
+            letter-spacing:1px;
+        ">
+            🎓 FAST TUTOR
+        </div>
+
+        <div style="
+            color:#7A869A;
+            font-size:12px;
+            margin-top:5px;
+        ">
+            Student Performance System
+        </div>
+
+    </div>
+    """,
     unsafe_allow_html=True
 )
 
-st.sidebar.markdown(
-    '<div class="sub-title">Student Performance System</div>',
-    unsafe_allow_html=True
-)
+
+# ============================================================
+# NAVIGATION
+# ============================================================
 
 page = st.sidebar.radio(
-    "Navigation",
+    "Go to",
     [
-        "Dashboard",
-        "Courses",
-        "Students",
-        "Assessments",
-        "CLO Management",
-        "PLO Management",
-        "CLO-PLO Mapping",
-        "Bulk Marks",
-        "Student Performance",
-        "Attainment",
-        "Reports"
+        "🏠 Dashboard",
+        "📚 Courses",
+        "👨‍🎓 Students",
+        "📝 Assessments",
+        "🎯 CLO Management",
+        "🏆 PLO Management",
+        "🔗 CLO-PLO Mapping",
+        "📥 Bulk Marks",
+        "👤 Student Performance",
+        "📊 Attainment",
+        "📑 Reports"
     ]
+)
+
+
+st.sidebar.divider()
+
+st.sidebar.caption(
+    "Fast Tutor"
+)
+
+st.sidebar.caption(
+    "Simple • Intelligent • Student Focused"
 )
 
 
@@ -354,132 +596,391 @@ page = st.sidebar.radio(
 # DASHBOARD
 # ============================================================
 
-if page == "Dashboard":
+if page == "🏠 Dashboard":
 
     st.markdown(
-        '<div class="section-title">Dashboard</div>',
+        """
+        <div class="fast-hero">
+
+            <div style="
+                font-size:15px;
+                font-weight:700;
+                margin-bottom:7px;
+            ">
+                🎓 FAST TUTOR
+            </div>
+
+            <div class="fast-hero-title">
+                Academic Performance Dashboard
+            </div>
+
+            <div class="fast-hero-text">
+                Manage courses, students, assessments,
+                marks and learning-outcome attainment
+                from one simple platform.
+            </div>
+
+        </div>
+        """,
         unsafe_allow_html=True
     )
 
-    st.write(
-        "Manage courses, students, assessments and academic performance."
-    )
+    # --------------------------------------------------------
+    # COUNTS
+    # --------------------------------------------------------
 
-    courses = one(
+    courses_count = one(
         "SELECT COUNT(*) FROM courses"
     )[0]
 
-    students = one(
+    students_count = one(
         "SELECT COUNT(*) FROM students"
     )[0]
 
-    assessments = one(
+    assessments_count = one(
         "SELECT COUNT(*) FROM assessments"
     )[0]
 
-    clos = one(
+    clos_count = one(
         "SELECT COUNT(*) FROM clos"
     )[0]
 
-    plos = one(
+    plos_count = one(
         "SELECT COUNT(*) FROM plos"
     )[0]
 
-    marks = one(
+    results_count = one(
         "SELECT COUNT(*) FROM results"
     )[0]
 
+    st.markdown(
+        '<div class="section-heading">📊 Overview</div>',
+        unsafe_allow_html=True
+    )
+
+    # First row
+
     a, b, c = st.columns(3)
 
-    a.metric(
-        "Courses",
-        courses
-    )
+    with a:
 
-    b.metric(
-        "Students",
-        students
-    )
+        st.markdown(
+            f"""
+            <div class="small-card">
 
-    c.metric(
-        "Assessments",
-        assessments
-    )
+                <div class="small-card-icon">
+                    📚
+                </div>
+
+                <div class="small-card-title">
+                    Courses
+                </div>
+
+                <div class="small-card-number">
+                    {courses_count}
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with b:
+
+        st.markdown(
+            f"""
+            <div class="small-card">
+
+                <div class="small-card-icon">
+                    👨‍🎓
+                </div>
+
+                <div class="small-card-title">
+                    Students
+                </div>
+
+                <div class="small-card-number">
+                    {students_count}
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with c:
+
+        st.markdown(
+            f"""
+            <div class="small-card">
+
+                <div class="small-card-icon">
+                    📝
+                </div>
+
+                <div class="small-card-title">
+                    Assessments
+                </div>
+
+                <div class="small-card-number">
+                    {assessments_count}
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.write("")
+
+    # Second row
 
     d, e, f = st.columns(3)
 
-    d.metric(
-        "CLOs",
-        clos
-    )
+    with d:
 
-    e.metric(
-        "PLOs",
-        plos
-    )
+        st.markdown(
+            f"""
+            <div class="small-card">
 
-    f.metric(
-        "Mark Records",
-        marks
-    )
+                <div class="small-card-icon">
+                    🎯
+                </div>
 
-    st.divider()
+                <div class="small-card-title">
+                    CLOs
+                </div>
 
-    st.subheader(
-        "Course Performance"
-    )
+                <div class="small-card-number">
+                    {clos_count}
+                </div>
 
-    rows = query("""
-        SELECT
-            course_code,
-            AVG(percentage)
-        FROM results
-        GROUP BY course_code
-        ORDER BY course_code
-    """)
-
-    if rows:
-
-        df = make_df(
-            rows,
-            [
-                "Course",
-                "Average"
-            ]
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-        df["Average"] = pd.to_numeric(
-            df["Average"],
-            errors="coerce"
+    with e:
+
+        st.markdown(
+            f"""
+            <div class="small-card">
+
+                <div class="small-card-icon">
+                    🏆
+                </div>
+
+                <div class="small-card-title">
+                    PLOs
+                </div>
+
+                <div class="small-card-number">
+                    {plos_count}
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-        st.bar_chart(
-            df.set_index("Course")
+    with f:
+
+        st.markdown(
+            f"""
+            <div class="small-card">
+
+                <div class="small-card-icon">
+                    📈
+                </div>
+
+                <div class="small-card-title">
+                    Mark Records
+                </div>
+
+                <div class="small-card-number">
+                    {results_count}
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-    else:
+    # --------------------------------------------------------
+    # QUICK ACTIONS
+    # --------------------------------------------------------
+
+    st.markdown(
+        '<div class="section-heading">⚡ Quick Actions</div>',
+        unsafe_allow_html=True
+    )
+
+    q1, q2, q3, q4 = st.columns(4)
+
+    with q1:
 
         st.info(
-            "Upload marks to display performance."
+            "📚 **Courses**\n\n"
+            "Create and manage your courses."
         )
+
+    with q2:
+
+        st.info(
+            "👨‍🎓 **Students**\n\n"
+            "Import your complete class list."
+        )
+
+    with q3:
+
+        st.info(
+            "📝 **Assessments**\n\n"
+            "Create quizzes, exams and assignments."
+        )
+
+    with q4:
+
+        st.info(
+            "📥 **Bulk Marks**\n\n"
+            "Upload marks for the entire class."
+        )
+
+    # --------------------------------------------------------
+    # PERFORMANCE
+    # --------------------------------------------------------
+
+    st.markdown(
+        '<div class="section-heading">📈 Performance Overview</div>',
+        unsafe_allow_html=True
+    )
+
+    left, right = st.columns(
+        [1.5, 1]
+    )
+
+    with left:
+
+        st.subheader(
+            "Course Average"
+        )
+
+        course_rows = query("""
+            SELECT
+                course_code,
+                AVG(percentage)
+            FROM results
+            GROUP BY course_code
+            ORDER BY course_code
+        """)
+
+        if course_rows:
+
+            course_df = make_df(
+                course_rows,
+                [
+                    "Course",
+                    "Average"
+                ]
+            )
+
+            course_df["Average"] = pd.to_numeric(
+                course_df["Average"],
+                errors="coerce"
+            ).round(2)
+
+            st.bar_chart(
+                course_df.set_index("Course")
+            )
+
+        else:
+
+            st.info(
+                "Course performance will appear here after marks are uploaded."
+            )
+
+    with right:
+
+        st.subheader(
+            "CLO Attainment"
+        )
+
+        clo_rows = query("""
+            SELECT
+                clo,
+                AVG(percentage)
+            FROM results
+            WHERE clo != ''
+            GROUP BY clo
+            ORDER BY clo
+        """)
+
+        if clo_rows:
+
+            clo_df = make_df(
+                clo_rows,
+                [
+                    "CLO",
+                    "Attainment"
+                ]
+            )
+
+            clo_df["Attainment"] = pd.to_numeric(
+                clo_df["Attainment"],
+                errors="coerce"
+            ).round(2)
+
+            st.bar_chart(
+                clo_df.set_index("CLO")
+            )
+
+        else:
+
+            st.info(
+                "CLO attainment will appear after marks are uploaded."
+            )
+
+    # --------------------------------------------------------
+    # TIP
+    # --------------------------------------------------------
+
+    st.markdown(
+        """
+        <div class="tip-box">
+
+            <b>💡 Recommended workflow</b><br><br>
+
+            <b>1.</b> Create your courses →
+            <b>2.</b> Import students →
+            <b>3.</b> Create assessments →
+            <b>4.</b> Define CLOs and PLOs →
+            <b>5.</b> Map CLOs to PLOs →
+            <b>6.</b> Upload marks in bulk →
+            <b>7.</b> Analyse individual performance →
+            <b>8.</b> View CLO/PLO attainment.
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # ============================================================
 # COURSES
 # ============================================================
 
-elif page == "Courses":
+elif page == "📚 Courses":
 
-    st.markdown(
-        '<div class="section-title">Courses</div>',
-        unsafe_allow_html=True
+    st.title("📚 Course Management")
+
+    st.write(
+        "Create your courses before enrolling or importing students."
     )
 
     with st.form("course_form"):
 
-        c1, c2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
-        with c1:
+        with col1:
 
             code = st.text_input(
                 "Course Code",
@@ -491,13 +992,14 @@ elif page == "Courses":
                 placeholder="Programming Fundamentals"
             )
 
-        with c2:
+        with col2:
 
-            credits = st.number_input(
+            credit_hours = st.number_input(
                 "Credit Hours",
                 min_value=1.0,
                 max_value=10.0,
-                value=3.0
+                value=3.0,
+                step=0.5
             )
 
             semester = st.text_input(
@@ -505,12 +1007,12 @@ elif page == "Courses":
                 placeholder="1"
             )
 
-        save = st.form_submit_button(
-            "Save Course",
+        submitted = st.form_submit_button(
+            "➕ Save Course",
             type="primary"
         )
 
-    if save:
+    if submitted:
 
         code = clean(code).upper()
         name = clean(name)
@@ -530,22 +1032,29 @@ elif page == "Courses":
 
             if existing:
 
-                execute("""
+                success = execute(
+                    """
                     UPDATE courses
-                    SET name=?,
+
+                    SET
+                        name=?,
                         credit_hours=?,
                         semester=?
+
                     WHERE code=?
-                """, (
-                    name,
-                    credits,
-                    semester,
-                    code
-                ))
+                    """,
+                    (
+                        name,
+                        credit_hours,
+                        semester,
+                        code
+                    )
+                )
 
             else:
 
-                execute("""
+                success = execute(
+                    """
                     INSERT INTO courses
                     (
                         code,
@@ -553,40 +1062,51 @@ elif page == "Courses":
                         credit_hours,
                         semester
                     )
-                    VALUES (?, ?, ?, ?)
-                """, (
-                    code,
-                    name,
-                    credits,
-                    semester
-                ))
 
-            st.success(
-                "Course saved successfully."
-            )
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        code,
+                        name,
+                        credit_hours,
+                        semester
+                    )
+                )
+
+            if success:
+
+                st.success(
+                    "Course saved successfully."
+                )
 
     st.divider()
 
-    rows = query("""
+    rows = query(
+        """
         SELECT
             code,
             name,
             credit_hours,
             semester
+
         FROM courses
+
         ORDER BY code
-    """)
+        """
+    )
+
+    df = make_df(
+        rows,
+        [
+            "Course Code",
+            "Course Name",
+            "Credit Hours",
+            "Semester"
+        ]
+    )
 
     st.dataframe(
-        make_df(
-            rows,
-            [
-                "Course Code",
-                "Course Name",
-                "Credit Hours",
-                "Semester"
-            ]
-        ),
+        df,
         use_container_width=True,
         hide_index=True
     )
@@ -596,61 +1116,67 @@ elif page == "Courses":
 # STUDENTS
 # ============================================================
 
-elif page == "Students":
+elif page == "👨‍🎓 Students":
 
-    st.markdown(
-        '<div class="section-title">Students</div>',
-        unsafe_allow_html=True
-    )
+    st.title("👨‍🎓 Student Enrollment")
 
     tab1, tab2 = st.tabs(
         [
             "Add Student",
-            "Bulk Import"
+            "📥 Bulk Import"
         ]
     )
+
+    # --------------------------------------------------------
+    # ADD STUDENT
+    # --------------------------------------------------------
 
     with tab1:
 
         with st.form("student_form"):
 
-            c1, c2 = st.columns(2)
+            col1, col2 = st.columns(2)
 
-            with c1:
+            with col1:
 
                 roll = st.text_input(
-                    "Roll Number"
+                    "Roll Number",
+                    placeholder="CS001"
                 )
 
-                name = st.text_input(
-                    "Student Name"
+                student_name = st.text_input(
+                    "Student Name",
+                    placeholder="Ali Ahmed"
                 )
 
                 program = st.text_input(
-                    "Program"
+                    "Program",
+                    placeholder="BS Computer Science"
                 )
 
-            with c2:
+            with col2:
 
                 semester = st.text_input(
-                    "Semester"
+                    "Semester",
+                    placeholder="1"
                 )
 
                 section = st.text_input(
-                    "Section"
+                    "Section",
+                    placeholder="A"
                 )
 
-            save = st.form_submit_button(
-                "Save Student",
+            save_student = st.form_submit_button(
+                "➕ Save Student",
                 type="primary"
             )
 
-        if save:
+        if save_student:
 
             roll = clean(roll)
-            name = clean(name)
+            student_name = clean(student_name)
 
-            if not roll or not name:
+            if not roll or not student_name:
 
                 st.warning(
                     "Roll number and student name are required."
@@ -665,24 +1191,31 @@ elif page == "Students":
 
                 if existing:
 
-                    execute("""
+                    success = execute(
+                        """
                         UPDATE students
-                        SET name=?,
+
+                        SET
+                            name=?,
                             program=?,
                             semester=?,
                             section=?
+
                         WHERE roll_no=?
-                    """, (
-                        name,
-                        program,
-                        semester,
-                        section,
-                        roll
-                    ))
+                        """,
+                        (
+                            student_name,
+                            program,
+                            semester,
+                            section,
+                            roll
+                        )
+                    )
 
                 else:
 
-                    execute("""
+                    success = execute(
+                        """
                         INSERT INTO students
                         (
                             roll_no,
@@ -691,53 +1224,77 @@ elif page == "Students":
                             semester,
                             section
                         )
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (
-                        roll,
-                        name,
-                        program,
-                        semester,
-                        section
-                    ))
 
-                st.success(
-                    "Student saved."
-                )
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            roll,
+                            student_name,
+                            program,
+                            semester,
+                            section
+                        )
+                    )
+
+                if success:
+
+                    st.success(
+                        "Student saved successfully."
+                    )
+
+    # --------------------------------------------------------
+    # BULK IMPORT
+    # --------------------------------------------------------
 
     with tab2:
 
         st.subheader(
-            "Bulk Student Import"
+            "📥 Import Students in Bulk"
         )
 
-        template = pd.DataFrame({
-            "Roll Number": [
-                "CS001",
-                "CS002"
-            ],
-            "Student Name": [
-                "Ali Ahmed",
-                "Sara Khan"
-            ],
-            "Program": [
-                "BSCS",
-                "BSCS"
-            ],
-            "Semester": [
-                "1",
-                "1"
-            ],
-            "Section": [
-                "A",
-                "A"
-            ]
-        })
+        st.write(
+            "Upload the complete student list instead of entering students one by one."
+        )
+
+        template = pd.DataFrame(
+            {
+                "Roll Number": [
+                    "CS001",
+                    "CS002",
+                    "CS003"
+                ],
+
+                "Student Name": [
+                    "Ali Ahmed",
+                    "Sara Khan",
+                    "Usman Ali"
+                ],
+
+                "Program": [
+                    "BSCS",
+                    "BSCS",
+                    "BSCS"
+                ],
+
+                "Semester": [
+                    "1",
+                    "1",
+                    "1"
+                ],
+
+                "Section": [
+                    "A",
+                    "A",
+                    "A"
+                ]
+            }
+        )
 
         st.download_button(
-            "Download Student Template",
+            "⬇️ Download Student Template",
             template.to_csv(
                 index=False
-            ).encode(),
+            ).encode("utf-8"),
             "Fast_Tutor_Student_Template.csv",
             "text/csv"
         )
@@ -749,16 +1306,20 @@ elif page == "Students":
                 "xlsx",
                 "xls"
             ],
-            key="students_file"
+            key="student_upload"
         )
 
         if uploaded:
 
-            df = read_uploaded_file(
+            df = read_file(
                 uploaded
             )
 
             if df is not None:
+
+                st.write(
+                    f"**{len(df)} rows found**"
+                )
 
                 st.dataframe(
                     df,
@@ -767,27 +1328,37 @@ elif page == "Students":
                 )
 
                 if st.button(
-                    "IMPORT STUDENTS",
-                    type="primary"
+                    "IMPORT ALL STUDENTS",
+                    type="primary",
+                    key="import_students"
                 ):
 
-                    success_count = 0
-                    skip_count = 0
-
-                    columns = {
-                        str(c).lower().strip(): c
-                        for c in df.columns
+                    column_map = {
+                        str(column).strip().lower(): column
+                        for column in df.columns
                     }
 
                     roll_col = (
-                        columns.get("roll number")
-                        or columns.get("roll_no")
-                        or columns.get("roll")
+                        column_map.get("roll number")
+                        or column_map.get("roll_no")
+                        or column_map.get("roll")
                     )
 
                     name_col = (
-                        columns.get("student name")
-                        or columns.get("name")
+                        column_map.get("student name")
+                        or column_map.get("name")
+                    )
+
+                    program_col = (
+                        column_map.get("program")
+                    )
+
+                    semester_col = (
+                        column_map.get("semester")
+                    )
+
+                    section_col = (
+                        column_map.get("section")
                     )
 
                     if not roll_col or not name_col:
@@ -800,75 +1371,137 @@ elif page == "Students":
 
                     else:
 
+                        imported = 0
+                        skipped = 0
+
                         for _, row in df.iterrows():
 
-                            r = clean(
+                            roll_value = clean(
                                 row[roll_col]
                             )
 
-                            n = clean(
+                            name_value = clean(
                                 row[name_col]
                             )
 
-                            if not r or not n:
+                            program_value = (
+                                clean(row[program_col])
+                                if program_col
+                                else ""
+                            )
 
-                                skip_count += 1
+                            semester_value = (
+                                clean(row[semester_col])
+                                if semester_col
+                                else ""
+                            )
+
+                            section_value = (
+                                clean(row[section_col])
+                                if section_col
+                                else ""
+                            )
+
+                            if (
+                                not roll_value
+                                or not name_value
+                            ):
+
+                                skipped += 1
                                 continue
 
-                            execute("""
-                                INSERT OR REPLACE INTO students
+                            existing = one(
+                                """
+                                SELECT id
+                                FROM students
+                                WHERE roll_no=?
+                                """,
                                 (
-                                    id,
-                                    roll_no,
-                                    name,
-                                    program,
-                                    semester,
-                                    section
+                                    roll_value,
                                 )
-                                VALUES (
-                                    (
-                                        SELECT id
-                                        FROM students
-                                        WHERE roll_no=?
-                                    ),
-                                    ?,
-                                    ?,
-                                    ?,
-                                    ?,
-                                    ?
-                                )
-                            """, (
-                                r,
-                                r,
-                                n,
-                                "",
-                                "",
-                                ""
-                            ))
+                            )
 
-                            success_count += 1
+                            if existing:
+
+                                success = execute(
+                                    """
+                                    UPDATE students
+
+                                    SET
+                                        name=?,
+                                        program=?,
+                                        semester=?,
+                                        section=?
+
+                                    WHERE roll_no=?
+                                    """,
+                                    (
+                                        name_value,
+                                        program_value,
+                                        semester_value,
+                                        section_value,
+                                        roll_value
+                                    )
+                                )
+
+                            else:
+
+                                success = execute(
+                                    """
+                                    INSERT INTO students
+                                    (
+                                        roll_no,
+                                        name,
+                                        program,
+                                        semester,
+                                        section
+                                    )
+
+                                    VALUES (?, ?, ?, ?, ?)
+                                    """,
+                                    (
+                                        roll_value,
+                                        name_value,
+                                        program_value,
+                                        semester_value,
+                                        section_value
+                                    )
+                                )
+
+                            if success:
+
+                                imported += 1
+
+                            else:
+
+                                skipped += 1
 
                         st.success(
-                            f"{success_count} students imported."
+                            f"{imported} students imported successfully."
                         )
 
-                        if skip_count:
+                        if skipped:
+
                             st.warning(
-                                f"{skip_count} rows skipped."
+                                f"{skipped} rows were skipped."
                             )
 
     st.divider()
 
-    rows = query("""
+    rows = query(
+        """
         SELECT
             roll_no,
             name,
             program,
             semester,
             section
+
         FROM students
+
         ORDER BY roll_no
-    """)
+        """
+    )
 
     st.dataframe(
         make_df(
@@ -890,44 +1523,48 @@ elif page == "Students":
 # ASSESSMENTS
 # ============================================================
 
-elif page == "Assessments":
+elif page == "📝 Assessments":
 
-    st.markdown(
-        '<div class="section-title">Assessment Creation</div>',
-        unsafe_allow_html=True
-    )
+    st.title("📝 Assessment Creation")
 
-    courses = query("""
-        SELECT code, name
+    courses = query(
+        """
+        SELECT
+            code,
+            name
+
         FROM courses
+
         ORDER BY code
-    """)
+        """
+    )
 
     if not courses:
 
-        st.info(
-            "Create a course first."
+        st.warning(
+            "Please create a course first."
         )
 
     else:
 
         course_options = [
-            f"{x[0]} - {x[1]}"
-            for x in courses
+            f"{row[0]} - {row[1]}"
+            for row in courses
         ]
 
-        selected = st.selectbox(
+        selected_course = st.selectbox(
             "Course",
             course_options
         )
 
-        course_code = selected.split(
-            " - "
+        course_code = selected_course.split(
+            " - ",
+            1
         )[0]
 
         with st.form("assessment_form"):
 
-            name = st.text_input(
+            assessment_name = st.text_input(
                 "Assessment Name",
                 placeholder="Midterm Examination"
             )
@@ -937,8 +1574,8 @@ elif page == "Assessments":
                 [
                     "Quiz",
                     "Assignment",
-                    "Midterm",
-                    "Final",
+                    "Midterm Examination",
+                    "Final Examination",
                     "Project",
                     "Lab",
                     "Presentation",
@@ -946,27 +1583,33 @@ elif page == "Assessments":
                 ]
             )
 
-            total = st.number_input(
-                "Total Marks",
-                min_value=1.0,
-                value=100.0
-            )
+            col1, col2 = st.columns(2)
 
-            weight = st.number_input(
-                "Weightage %",
-                min_value=0.0,
-                max_value=100.0,
-                value=20.0
-            )
+            with col1:
 
-            save = st.form_submit_button(
-                "Create Assessment",
+                total_marks = st.number_input(
+                    "Total Marks",
+                    min_value=1.0,
+                    value=100.0
+                )
+
+            with col2:
+
+                weightage = st.number_input(
+                    "Weightage %",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=20.0
+                )
+
+            save_assessment = st.form_submit_button(
+                "➕ Create Assessment",
                 type="primary"
             )
 
-        if save:
+        if save_assessment:
 
-            if not clean(name):
+            if not clean(assessment_name):
 
                 st.warning(
                     "Assessment name is required."
@@ -974,7 +1617,8 @@ elif page == "Assessments":
 
             else:
 
-                execute("""
+                success = execute(
+                    """
                     INSERT INTO assessments
                     (
                         course_code,
@@ -983,31 +1627,44 @@ elif page == "Assessments":
                         total_marks,
                         weightage
                     )
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    course_code,
-                    clean(name),
-                    assessment_type,
-                    total,
-                    weight
-                ))
 
-                st.success(
-                    "Assessment created."
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        course_code,
+                        clean(assessment_name),
+                        assessment_type,
+                        total_marks,
+                        weightage
+                    )
                 )
 
-        rows = query("""
+                if success:
+
+                    st.success(
+                        "Assessment created successfully."
+                    )
+
+        st.divider()
+
+        rows = query(
+            """
             SELECT
                 name,
                 assessment_type,
                 total_marks,
                 weightage
+
             FROM assessments
+
             WHERE course_code=?
+
             ORDER BY id DESC
-        """, (
-            course_code,
-        ))
+            """,
+            (
+                course_code,
+            )
+        )
 
         st.dataframe(
             make_df(
@@ -1016,7 +1673,7 @@ elif page == "Assessments":
                     "Assessment",
                     "Type",
                     "Total Marks",
-                    "Weightage"
+                    "Weightage %"
                 ]
             ),
             use_container_width=True,
@@ -1028,50 +1685,56 @@ elif page == "Assessments":
 # CLO MANAGEMENT
 # ============================================================
 
-elif page == "CLO Management":
+elif page == "🎯 CLO Management":
 
-    st.markdown(
-        '<div class="section-title">CLO Management</div>',
-        unsafe_allow_html=True
-    )
+    st.title("🎯 CLO Management")
 
-    courses = query("""
-        SELECT code, name
+    courses = query(
+        """
+        SELECT
+            code,
+            name
+
         FROM courses
+
         ORDER BY code
-    """)
+        """
+    )
 
     if not courses:
 
-        st.info(
-            "Create a course first."
+        st.warning(
+            "Please create a course first."
         )
 
     else:
 
-        options = [
-            f"{x[0]} - {x[1]}"
-            for x in courses
+        course_options = [
+            f"{row[0]} - {row[1]}"
+            for row in courses
         ]
 
-        selected = st.selectbox(
+        selected_course = st.selectbox(
             "Course",
-            options
+            course_options,
+            key="clo_course"
         )
 
-        course_code = selected.split(
-            " - "
+        course_code = selected_course.split(
+            " - ",
+            1
         )[0]
 
         with st.form("clo_form"):
 
-            clo = st.text_input(
+            clo_code = st.text_input(
                 "CLO",
                 placeholder="CLO1"
             )
 
             description = st.text_area(
-                "CLO Description"
+                "CLO Description",
+                placeholder="Explain fundamental programming concepts."
             )
 
             bloom = st.selectbox(
@@ -1086,54 +1749,102 @@ elif page == "CLO Management":
                 ]
             )
 
-            save = st.form_submit_button(
-                "Save CLO",
+            save_clo = st.form_submit_button(
+                "➕ Save CLO",
                 type="primary"
             )
 
-        if save:
+        if save_clo:
 
-            clo = clean(clo).upper()
+            clo_code = clean(
+                clo_code
+            ).upper()
 
-            if not clo:
+            if not clo_code:
 
                 st.warning(
-                    "Enter a CLO."
+                    "Enter a CLO code."
                 )
 
             else:
 
-                execute("""
-                    INSERT INTO clos
+                existing = one(
+                    """
+                    SELECT id
+                    FROM clos
+                    WHERE course_code=?
+                    AND clo=?
+                    """,
                     (
                         course_code,
-                        clo,
-                        description,
-                        bloom
+                        clo_code
                     )
-                    VALUES (?, ?, ?, ?)
-                """, (
-                    course_code,
-                    clo,
-                    description,
-                    bloom
-                ))
-
-                st.success(
-                    "CLO saved."
                 )
 
-        rows = query("""
+                if existing:
+
+                    success = execute(
+                        """
+                        UPDATE clos
+
+                        SET
+                            description=?,
+                            bloom=?
+
+                        WHERE id=?
+                        """,
+                        (
+                            description,
+                            bloom,
+                            existing[0]
+                        )
+                    )
+
+                else:
+
+                    success = execute(
+                        """
+                        INSERT INTO clos
+                        (
+                            course_code,
+                            clo,
+                            description,
+                            bloom
+                        )
+
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            course_code,
+                            clo_code,
+                            description,
+                            bloom
+                        )
+                    )
+
+                if success:
+
+                    st.success(
+                        "CLO saved successfully."
+                    )
+
+        rows = query(
+            """
             SELECT
                 clo,
                 description,
                 bloom
+
             FROM clos
+
             WHERE course_code=?
+
             ORDER BY clo
-        """, (
-            course_code,
-        ))
+            """,
+            (
+                course_code,
+            )
+        )
 
         st.dataframe(
             make_df(
@@ -1153,83 +1864,105 @@ elif page == "CLO Management":
 # PLO MANAGEMENT
 # ============================================================
 
-elif page == "PLO Management":
+elif page == "🏆 PLO Management":
 
-    st.markdown(
-        '<div class="section-title">PLO Management</div>',
-        unsafe_allow_html=True
-    )
+    st.title("🏆 PLO Management")
 
     with st.form("plo_form"):
 
-        plo = st.text_input(
+        plo_code = st.text_input(
             "PLO",
             placeholder="PLO1"
         )
 
-        description = st.text_area(
+        plo_description = st.text_area(
             "PLO Description",
             placeholder="Knowledge of Computing"
         )
 
-        save = st.form_submit_button(
-            "Save PLO",
+        save_plo = st.form_submit_button(
+            "➕ Save PLO",
             type="primary"
         )
 
-    if save:
+    if save_plo:
 
-        plo = clean(plo).upper()
+        plo_code = clean(
+            plo_code
+        ).upper()
 
-        if not plo:
+        if not plo_code:
 
             st.warning(
-                "Enter a PLO."
+                "Enter a PLO code."
             )
 
         else:
 
             existing = one(
-                "SELECT id FROM plos WHERE plo=?",
-                (plo,)
+                """
+                SELECT id
+                FROM plos
+                WHERE plo=?
+                """,
+                (
+                    plo_code,
+                )
             )
 
             if existing:
 
-                execute("""
+                success = execute(
+                    """
                     UPDATE plos
+
                     SET description=?
+
                     WHERE plo=?
-                """, (
-                    description,
-                    plo
-                ))
+                    """,
+                    (
+                        plo_description,
+                        plo_code
+                    )
+                )
 
             else:
 
-                execute("""
+                success = execute(
+                    """
                     INSERT INTO plos
                     (
                         plo,
                         description
                     )
+
                     VALUES (?, ?)
-                """, (
-                    plo,
-                    description
-                ))
+                    """,
+                    (
+                        plo_code,
+                        plo_description
+                    )
+                )
 
-            st.success(
-                "PLO saved."
-            )
+            if success:
 
-    rows = query("""
+                st.success(
+                    "PLO saved successfully."
+                )
+
+    st.divider()
+
+    rows = query(
+        """
         SELECT
             plo,
             description
+
         FROM plos
+
         ORDER BY plo
-    """)
+        """
+    )
 
     st.dataframe(
         make_df(
@@ -1248,78 +1981,101 @@ elif page == "PLO Management":
 # CLO-PLO MAPPING
 # ============================================================
 
-elif page == "CLO-PLO Mapping":
+elif page == "🔗 CLO-PLO Mapping":
 
-    st.markdown(
-        '<div class="section-title">CLO-PLO Mapping</div>',
-        unsafe_allow_html=True
+    st.title("🔗 CLO-PLO Mapping")
+
+    st.write(
+        "Map each CLO to one or more PLOs."
     )
 
-    courses = query("""
-        SELECT code, name
-        FROM courses
-        ORDER BY code
-    """)
+    courses = query(
+        """
+        SELECT
+            code,
+            name
 
-    plos = query("""
-        SELECT plo
+        FROM courses
+
+        ORDER BY code
+        """
+    )
+
+    plos = query(
+        """
+        SELECT
+            plo
+
         FROM plos
+
         ORDER BY plo
-    """)
+        """
+    )
 
     if not courses:
 
-        st.info(
+        st.warning(
             "Create courses first."
         )
 
     elif not plos:
 
-        st.info(
+        st.warning(
             "Create PLOs first."
         )
 
     else:
 
-        options = [
-            f"{x[0]} - {x[1]}"
-            for x in courses
+        course_options = [
+            f"{row[0]} - {row[1]}"
+            for row in courses
         ]
 
-        selected = st.selectbox(
+        selected_course = st.selectbox(
             "Course",
-            options
+            course_options,
+            key="mapping_course"
         )
 
-        course_code = selected.split(
-            " - "
+        course_code = selected_course.split(
+            " - ",
+            1
         )[0]
 
-        clos = query("""
-            SELECT clo
+        clos = query(
+            """
+            SELECT
+                clo
+
             FROM clos
+
             WHERE course_code=?
+
             ORDER BY clo
-        """, (
-            course_code,
-        ))
+            """,
+            (
+                course_code,
+            )
+        )
 
         plo_codes = [
-            x[0]
-            for x in plos
+            row[0]
+            for row in plos
         ]
 
         if not clos:
 
-            st.info(
+            st.warning(
                 "Create CLOs for this course first."
             )
 
         else:
 
-            st.write(
-                "0 = None | 1 = Low | "
-                "2 = Medium | 3 = High"
+            st.info(
+                "0 = No Mapping | "
+                "1 = Low | "
+                "2 = Medium | "
+                "3 = High"
             )
 
             for clo_row in clos:
@@ -1327,68 +2083,98 @@ elif page == "CLO-PLO Mapping":
                 clo = clo_row[0]
 
                 st.markdown(
-                    f"**{clo}**"
+                    f"### {clo}"
                 )
 
-                cols = st.columns(
+                columns = st.columns(
                     len(plo_codes)
                 )
 
-                for i, plo in enumerate(
+                for index, plo in enumerate(
                     plo_codes
                 ):
 
-                    existing = one("""
-                        SELECT strength
+                    existing = one(
+                        """
+                        SELECT
+                            strength
+
                         FROM mappings
-                        WHERE course_code=?
-                        AND clo=?
-                        AND plo=?
-                    """, (
-                        course_code,
-                        clo,
-                        plo
-                    ))
+
+                        WHERE
+                            course_code=?
+                            AND clo=?
+                            AND plo=?
+                        """,
+                        (
+                            course_code,
+                            clo,
+                            plo
+                        )
+                    )
 
                     current = (
-                        existing[0]
+                        int(existing[0])
                         if existing
                         else 0
                     )
 
-                    value = cols[i].selectbox(
+                    value = columns[index].selectbox(
                         plo,
-                        [0, 1, 2, 3],
-                        index=int(current),
-                        key=f"{course_code}_{clo}_{plo}"
+                        [
+                            0,
+                            1,
+                            2,
+                            3
+                        ],
+                        index=current,
+                        key=(
+                            f"mapping_"
+                            f"{course_code}_"
+                            f"{clo}_"
+                            f"{plo}"
+                        )
                     )
 
-                    old = one("""
-                        SELECT id
+                    mapping_id = one(
+                        """
+                        SELECT
+                            id
+
                         FROM mappings
-                        WHERE course_code=?
-                        AND clo=?
-                        AND plo=?
-                    """, (
-                        course_code,
-                        clo,
-                        plo
-                    ))
 
-                    if old:
+                        WHERE
+                            course_code=?
+                            AND clo=?
+                            AND plo=?
+                        """,
+                        (
+                            course_code,
+                            clo,
+                            plo
+                        )
+                    )
 
-                        execute("""
+                    if mapping_id:
+
+                        execute(
+                            """
                             UPDATE mappings
+
                             SET strength=?
+
                             WHERE id=?
-                        """, (
-                            value,
-                            old[0]
-                        ))
+                            """,
+                            (
+                                value,
+                                mapping_id[0]
+                            )
+                        )
 
                     else:
 
-                        execute("""
+                        execute(
+                            """
                             INSERT INTO mappings
                             (
                                 course_code,
@@ -1396,16 +2182,76 @@ elif page == "CLO-PLO Mapping":
                                 plo,
                                 strength
                             )
+
                             VALUES (?, ?, ?, ?)
-                        """, (
-                            course_code,
-                            clo,
-                            plo,
-                            value
-                        ))
+                            """,
+                            (
+                                course_code,
+                                clo,
+                                plo,
+                                value
+                            )
+                        )
 
             st.success(
-                "Mapping saved."
+                "CLO-PLO mapping is saved."
+            )
+
+            # Matrix
+
+            st.subheader(
+                "Mapping Matrix"
+            )
+
+            matrix_rows = []
+
+            for clo_row in clos:
+
+                clo = clo_row[0]
+
+                row_data = {
+                    "CLO": clo
+                }
+
+                for plo in plo_codes:
+
+                    mapping = one(
+                        """
+                        SELECT
+                            strength
+
+                        FROM mappings
+
+                        WHERE
+                            course_code=?
+                            AND clo=?
+                            AND plo=?
+                        """,
+                        (
+                            course_code,
+                            clo,
+                            plo
+                        )
+                    )
+
+                    row_data[plo] = (
+                        mapping[0]
+                        if mapping
+                        else 0
+                    )
+
+                matrix_rows.append(
+                    row_data
+                )
+
+            matrix_df = pd.DataFrame(
+                matrix_rows
+            )
+
+            st.dataframe(
+                matrix_df,
+                use_container_width=True,
+                hide_index=True
             )
 
 
@@ -1413,53 +2259,57 @@ elif page == "CLO-PLO Mapping":
 # BULK MARKS
 # ============================================================
 
-elif page == "Bulk Marks":
+elif page == "📥 Bulk Marks":
 
-    st.markdown(
-        '<div class="section-title">Bulk Marks Upload</div>',
-        unsafe_allow_html=True
-    )
+    st.title("📥 Bulk Marks Upload")
 
-    st.write(
+    st.success(
         "Upload the complete class marks file. "
-        "You do NOT need to enter marks one student at a time."
+        "You do not need to enter marks one student at a time."
     )
-
-    template = pd.DataFrame({
-        "Roll Number": [
-            "CS001",
-            "CS002",
-            "CS003"
-        ],
-        "Course Code": [
-            "CS101",
-            "CS101",
-            "CS101"
-        ],
-        "Assessment": [
-            "Midterm",
-            "Midterm",
-            "Midterm"
-        ],
-        "CLO": [
-            "CLO1",
-            "CLO1",
-            "CLO1"
-        ],
-        "Obtained Marks": [
-            82,
-            75,
-            91
-        ],
-        "Total Marks": [
-            100,
-            100,
-            100
-        ]
-    })
 
     st.subheader(
-        "Required Format"
+        "Required File Format"
+    )
+
+    template = pd.DataFrame(
+        {
+            "Roll Number": [
+                "CS001",
+                "CS002",
+                "CS003"
+            ],
+
+            "Course Code": [
+                "CS101",
+                "CS101",
+                "CS101"
+            ],
+
+            "Assessment": [
+                "Midterm",
+                "Midterm",
+                "Midterm"
+            ],
+
+            "CLO": [
+                "CLO1",
+                "CLO1",
+                "CLO1"
+            ],
+
+            "Obtained Marks": [
+                82,
+                75,
+                91
+            ],
+
+            "Total Marks": [
+                100,
+                100,
+                100
+            ]
+        }
     )
 
     st.dataframe(
@@ -1469,188 +2319,227 @@ elif page == "Bulk Marks":
     )
 
     st.download_button(
-        "Download Marks Template",
+        "⬇️ Download Marks Template",
         template.to_csv(
             index=False
-        ).encode(),
+        ).encode("utf-8"),
         "Fast_Tutor_Marks_Template.csv",
         "text/csv"
     )
 
-    uploaded = st.file_uploader(
-        "Upload Marks File",
+    uploaded_marks = st.file_uploader(
+        "Upload CSV or Excel marks file",
         type=[
             "csv",
             "xlsx",
             "xls"
         ],
-        key="marks_file"
+        key="marks_upload"
     )
 
-    if uploaded:
+    if uploaded_marks:
 
-        df = read_uploaded_file(
-            uploaded
+        marks_df = read_file(
+            uploaded_marks
         )
 
-        if df is not None:
+        if marks_df is not None:
 
             st.write(
-                f"Rows detected: **{len(df)}**"
+                f"**{len(marks_df)} mark records found.**"
             )
 
             st.dataframe(
-                df,
+                marks_df,
                 use_container_width=True,
                 hide_index=True
             )
 
             if st.button(
-                "IMPORT ALL MARKS",
+                "🚀 IMPORT ALL MARKS",
                 type="primary"
             ):
 
-                imported = 0
-                skipped = 0
-
-                cols = {
-                    str(c).lower().strip(): c
-                    for c in df.columns
+                columns = {
+                    str(column).strip().lower(): column
+                    for column in marks_df.columns
                 }
 
                 roll_col = (
-                    cols.get("roll number")
-                    or cols.get("roll_no")
-                    or cols.get("roll")
+                    columns.get("roll number")
+                    or columns.get("roll_no")
+                    or columns.get("roll")
                 )
 
                 course_col = (
-                    cols.get("course code")
-                    or cols.get("course_code")
-                    or cols.get("course")
+                    columns.get("course code")
+                    or columns.get("course_code")
+                    or columns.get("course")
                 )
 
                 assessment_col = (
-                    cols.get("assessment")
-                    or cols.get("assessment name")
+                    columns.get("assessment")
+                    or columns.get("assessment name")
                 )
 
                 clo_col = (
-                    cols.get("clo")
-                    or cols.get("clo code")
+                    columns.get("clo")
+                    or columns.get("clo code")
                 )
 
                 obtained_col = (
-                    cols.get("obtained marks")
-                    or cols.get("obtained")
-                    or cols.get("marks")
+                    columns.get("obtained marks")
+                    or columns.get("obtained")
+                    or columns.get("marks")
                 )
 
                 total_col = (
-                    cols.get("total marks")
-                    or cols.get("total")
+                    columns.get("total marks")
+                    or columns.get("total")
                 )
 
-                required = [
-                    roll_col,
-                    course_col,
-                    assessment_col,
-                    obtained_col,
-                    total_col
-                ]
-
-                if any(
-                    x is None
-                    for x in required
+                if (
+                    not roll_col
+                    or not course_col
+                    or not assessment_col
+                    or not obtained_col
+                    or not total_col
                 ):
 
                     st.error(
                         "Required columns are: "
                         "Roll Number, Course Code, "
-                        "Assessment, Obtained Marks, "
-                        "Total Marks."
+                        "Assessment, Obtained Marks "
+                        "and Total Marks."
                     )
 
                 else:
 
-                    for _, row in df.iterrows():
+                    imported = 0
+                    skipped = 0
 
-                        roll = clean(
+                    progress = st.progress(
+                        0
+                    )
+
+                    total_rows = len(
+                        marks_df
+                    )
+
+                    for index, row in marks_df.iterrows():
+
+                        roll_value = clean(
                             row[roll_col]
                         )
 
-                        course = clean(
+                        course_value = clean(
                             row[course_col]
                         ).upper()
 
-                        assessment = clean(
+                        assessment_value = clean(
                             row[assessment_col]
                         )
 
-                        obtained = number(
+                        obtained_value = number(
                             row[obtained_col]
                         )
 
-                        total = number(
+                        total_value = number(
                             row[total_col]
                         )
 
-                        clo = ""
+                        clo_value = ""
 
                         if clo_col:
 
-                            clo = clean(
+                            clo_value = clean(
                                 row[clo_col]
                             ).upper()
 
+                        # Validate
+
                         if (
-                            not roll
-                            or not course
-                            or not assessment
-                            or total <= 0
-                            or obtained < 0
-                            or obtained > total
+                            not roll_value
+                            or not course_value
+                            or not assessment_value
+                            or total_value <= 0
+                            or obtained_value < 0
+                            or obtained_value > total_value
                         ):
 
                             skipped += 1
+
+                            progress.progress(
+                                int(
+                                    ((index + 1) /
+                                     total_rows) * 100
+                                )
+                            )
+
                             continue
 
-                        student = one("""
-                            SELECT id
+                        # Check student
+
+                        student = one(
+                            """
+                            SELECT
+                                id
+
                             FROM students
+
                             WHERE roll_no=?
-                        """, (
-                            roll,
-                        ))
+                            """,
+                            (
+                                roll_value,
+                            )
+                        )
 
                         if not student:
 
                             skipped += 1
+
+                            progress.progress(
+                                int(
+                                    ((index + 1) /
+                                     total_rows) * 100
+                                )
+                            )
+
                             continue
 
-                        pct = get_percentage(
-                            obtained,
-                            total
+                        mark_percentage = percentage(
+                            obtained_value,
+                            total_value
                         )
 
-                        grd = get_grade(
-                            pct
+                        mark_grade = grade(
+                            mark_percentage
                         )
 
-                        execute("""
+                        # Delete duplicate record
+
+                        execute(
+                            """
                             DELETE FROM results
-                            WHERE roll_no=?
-                            AND course_code=?
-                            AND assessment=?
-                            AND clo=?
-                        """, (
-                            roll,
-                            course,
-                            assessment,
-                            clo
-                        ))
 
-                        execute("""
+                            WHERE
+                                roll_no=?
+                                AND course_code=?
+                                AND assessment=?
+                                AND clo=?
+                            """,
+                            (
+                                roll_value,
+                                course_value,
+                                assessment_value,
+                                clo_value
+                            )
+                        )
+
+                        # Insert new result
+
+                        success = execute(
+                            """
                             INSERT INTO results
                             (
                                 roll_no,
@@ -1662,19 +2551,36 @@ elif page == "Bulk Marks":
                                 percentage,
                                 grade
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            roll,
-                            course,
-                            assessment,
-                            clo,
-                            obtained,
-                            total,
-                            pct,
-                            grd
-                        ))
 
-                        imported += 1
+                            VALUES
+                            (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                roll_value,
+                                course_value,
+                                assessment_value,
+                                clo_value,
+                                obtained_value,
+                                total_value,
+                                mark_percentage,
+                                mark_grade
+                            )
+                        )
+
+                        if success:
+
+                            imported += 1
+
+                        else:
+
+                            skipped += 1
+
+                        progress.progress(
+                            int(
+                                ((index + 1) /
+                                 total_rows) * 100
+                            )
+                        )
 
                     st.success(
                         f"{imported} marks imported successfully."
@@ -1691,20 +2597,21 @@ elif page == "Bulk Marks":
 # STUDENT PERFORMANCE
 # ============================================================
 
-elif page == "Student Performance":
+elif page == "👤 Student Performance":
 
-    st.markdown(
-        '<div class="section-title">Student Performance</div>',
-        unsafe_allow_html=True
-    )
+    st.title("👤 Individual Student Performance")
 
-    students = query("""
+    students = query(
+        """
         SELECT
             roll_no,
             name
+
         FROM students
+
         ORDER BY roll_no
-    """)
+        """
+    )
 
     if not students:
 
@@ -1714,31 +2621,37 @@ elif page == "Student Performance":
 
     else:
 
-        options = [
-            f"{x[0]} - {x[1]}"
-            for x in students
+        student_options = [
+            f"{row[0]} - {row[1]}"
+            for row in students
         ]
 
-        selected = st.selectbox(
+        selected_student = st.selectbox(
             "Select Student",
-            options
+            student_options
         )
 
-        roll = selected.split(
-            " - "
+        roll_no = selected_student.split(
+            " - ",
+            1
         )[0]
 
-        student = one("""
+        student = one(
+            """
             SELECT
                 name,
                 program,
                 semester,
                 section
+
             FROM students
+
             WHERE roll_no=?
-        """, (
-            roll,
-        ))
+            """,
+            (
+                roll_no,
+            )
+        )
 
         if student:
 
@@ -1746,29 +2659,30 @@ elif page == "Student Performance":
                 f"🎓 {student[0]}"
             )
 
-            c1, c2, c3, c4 = st.columns(4)
+            col1, col2, col3, col4 = st.columns(4)
 
-            c1.metric(
+            col1.metric(
                 "Roll Number",
-                roll
+                roll_no
             )
 
-            c2.metric(
+            col2.metric(
                 "Program",
                 student[1] or "-"
             )
 
-            c3.metric(
+            col3.metric(
                 "Semester",
                 student[2] or "-"
             )
 
-            c4.metric(
+            col4.metric(
                 "Section",
                 student[3] or "-"
             )
 
-            rows = query("""
+            results = query(
+                """
                 SELECT
                     course_code,
                     assessment,
@@ -1777,23 +2691,28 @@ elif page == "Student Performance":
                     total,
                     percentage,
                     grade
-                FROM results
-                WHERE roll_no=?
-                ORDER BY course_code
-            """, (
-                roll,
-            ))
 
-            if not rows:
+                FROM results
+
+                WHERE roll_no=?
+
+                ORDER BY course_code
+                """,
+                (
+                    roll_no,
+                )
+            )
+
+            if not results:
 
                 st.info(
-                    "No marks found."
+                    "No marks are available for this student."
                 )
 
             else:
 
-                df = make_df(
-                    rows,
+                performance_df = make_df(
+                    results,
                     [
                         "Course",
                         "Assessment",
@@ -1805,49 +2724,72 @@ elif page == "Student Performance":
                     ]
                 )
 
-                df["Percentage"] = pd.to_numeric(
-                    df["Percentage"],
+                performance_df["Percentage"] = pd.to_numeric(
+                    performance_df["Percentage"],
                     errors="coerce"
                 )
 
-                average = df[
+                overall = performance_df[
                     "Percentage"
                 ].mean()
 
-                st.metric(
+                highest = performance_df[
+                    "Percentage"
+                ].max()
+
+                lowest = performance_df[
+                    "Percentage"
+                ].min()
+
+                a, b, c = st.columns(3)
+
+                a.metric(
                     "Overall Performance",
-                    f"{average:.2f}%"
+                    f"{overall:.2f}%"
+                )
+
+                b.metric(
+                    "Highest",
+                    f"{highest:.2f}%"
+                )
+
+                c.metric(
+                    "Lowest",
+                    f"{lowest:.2f}%"
                 )
 
                 st.subheader(
-                    "Performance by Course"
+                    "📈 Course Performance"
                 )
 
-                chart = (
-                    df.groupby(
-                        "Course"
-                    )["Percentage"]
+                course_chart = (
+                    performance_df
+                    .groupby("Course")["Percentage"]
                     .mean()
                 )
 
                 st.bar_chart(
-                    chart
+                    course_chart
                 )
 
-                clo_df = df[
-                    df["CLO"].astype(str).str.strip() != ""
+                # CLO
+
+                clo_performance = performance_df[
+                    performance_df["CLO"]
+                    .astype(str)
+                    .str.strip()
+                    != ""
                 ]
 
-                if not clo_df.empty:
+                if not clo_performance.empty:
 
                     st.subheader(
-                        "CLO Performance"
+                        "🎯 CLO Performance"
                     )
 
                     clo_chart = (
-                        clo_df.groupby(
-                            "CLO"
-                        )["Percentage"]
+                        clo_performance
+                        .groupby("CLO")["Percentage"]
                         .mean()
                     )
 
@@ -1856,11 +2798,11 @@ elif page == "Student Performance":
                     )
 
                 st.subheader(
-                    "Marks Detail"
+                    "📋 Detailed Performance"
                 )
 
                 st.dataframe(
-                    df,
+                    performance_df,
                     use_container_width=True,
                     hide_index=True
                 )
@@ -1870,57 +2812,64 @@ elif page == "Student Performance":
 # ATTAINMENT
 # ============================================================
 
-elif page == "Attainment":
+elif page == "📊 Attainment":
 
-    st.markdown(
-        '<div class="section-title">CLO / PLO Attainment</div>',
-        unsafe_allow_html=True
-    )
+    st.title("📊 CLO & PLO Attainment")
 
-    tab1, tab2 = st.tabs(
+    clo_tab, plo_tab = st.tabs(
         [
-            "CLO Attainment",
-            "PLO Attainment"
+            "🎯 CLO Attainment",
+            "🏆 PLO Attainment"
         ]
     )
 
-    # --------------------------------------------------------
-    # CLO
-    # --------------------------------------------------------
+    # ========================================================
+    # CLO ATTAINMENT
+    # ========================================================
 
-    with tab1:
+    with clo_tab:
 
-        rows = query("""
+        st.subheader(
+            "CLO Attainment"
+        )
+
+        clo_rows = query(
+            """
             SELECT
                 clo,
                 AVG(percentage)
+
             FROM results
+
             WHERE clo != ''
+
             GROUP BY clo
+
             ORDER BY clo
-        """)
+            """
+        )
 
-        if rows:
+        if clo_rows:
 
-            df = make_df(
-                rows,
+            clo_df = make_df(
+                clo_rows,
                 [
                     "CLO",
                     "Attainment"
                 ]
             )
 
-            df["Attainment"] = pd.to_numeric(
-                df["Attainment"],
+            clo_df["Attainment"] = pd.to_numeric(
+                clo_df["Attainment"],
                 errors="coerce"
             ).round(2)
 
             st.bar_chart(
-                df.set_index("CLO")
+                clo_df.set_index("CLO")
             )
 
             st.dataframe(
-                df,
+                clo_df,
                 use_container_width=True,
                 hide_index=True
             )
@@ -1928,33 +2877,45 @@ elif page == "Attainment":
         else:
 
             st.info(
-                "No CLO marks available."
+                "No CLO attainment data is available yet."
             )
 
-    # --------------------------------------------------------
-    # PLO
-    # --------------------------------------------------------
+    # ========================================================
+    # PLO ATTAINMENT
+    # ========================================================
 
-    with tab2:
+    with plo_tab:
 
-        mapping_rows = query("""
+        st.subheader(
+            "PLO Attainment"
+        )
+
+        mapping_rows = query(
+            """
             SELECT
                 course_code,
                 clo,
                 plo,
                 strength
-            FROM mappings
-            WHERE strength > 0
-        """)
 
-        result_rows = query("""
+            FROM mappings
+
+            WHERE strength > 0
+            """
+        )
+
+        result_rows = query(
+            """
             SELECT
                 course_code,
                 clo,
                 percentage
+
             FROM results
+
             WHERE clo != ''
-        """)
+            """
+        )
 
         if not mapping_rows:
 
@@ -1965,7 +2926,7 @@ elif page == "Attainment":
         elif not result_rows:
 
             st.info(
-                "Upload marks first."
+                "Upload student marks first."
             )
 
         else:
@@ -2000,7 +2961,7 @@ elif page == "Attainment":
             if combined.empty:
 
                 st.info(
-                    "No matching attainment data."
+                    "There is no matching attainment data."
                 )
 
             else:
@@ -2028,6 +2989,7 @@ elif page == "Attainment":
                         "Weighted",
                         "sum"
                     ),
+
                     Strength=(
                         "Strength",
                         "sum"
@@ -2064,26 +3026,26 @@ elif page == "Attainment":
 # REPORTS
 # ============================================================
 
-elif page == "Reports":
+elif page == "📑 Reports":
 
-    st.markdown(
-        '<div class="section-title">Reports</div>',
-        unsafe_allow_html=True
-    )
+    st.title("📑 Reports")
 
     st.write(
-        "Download your Fast Tutor data as an Excel workbook."
+        "Export your Fast Tutor data into one Excel workbook."
     )
 
     courses_df = make_df(
-        query("""
+        query(
+            """
             SELECT
                 code,
                 name,
                 credit_hours,
                 semester
+
             FROM courses
-        """),
+            """
+        ),
         [
             "Course Code",
             "Course Name",
@@ -2093,15 +3055,18 @@ elif page == "Reports":
     )
 
     students_df = make_df(
-        query("""
+        query(
+            """
             SELECT
                 roll_no,
                 name,
                 program,
                 semester,
                 section
+
             FROM students
-        """),
+            """
+        ),
         [
             "Roll Number",
             "Student Name",
@@ -2112,15 +3077,18 @@ elif page == "Reports":
     )
 
     assessments_df = make_df(
-        query("""
+        query(
+            """
             SELECT
                 course_code,
                 name,
                 assessment_type,
                 total_marks,
                 weightage
+
             FROM assessments
-        """),
+            """
+        ),
         [
             "Course",
             "Assessment",
@@ -2131,44 +3099,53 @@ elif page == "Reports":
     )
 
     clos_df = make_df(
-        query("""
+        query(
+            """
             SELECT
                 course_code,
                 clo,
                 description,
                 bloom
+
             FROM clos
-        """),
+            """
+        ),
         [
             "Course",
             "CLO",
             "Description",
-            "Bloom"
+            "Bloom Level"
         ]
     )
 
     plos_df = make_df(
-        query("""
+        query(
+            """
             SELECT
                 plo,
                 description
+
             FROM plos
-        """),
+            """
+        ),
         [
             "PLO",
             "Description"
         ]
     )
 
-    mapping_df = make_df(
-        query("""
+    mappings_df = make_df(
+        query(
+            """
             SELECT
                 course_code,
                 clo,
                 plo,
                 strength
+
             FROM mappings
-        """),
+            """
+        ),
         [
             "Course",
             "CLO",
@@ -2178,7 +3155,8 @@ elif page == "Reports":
     )
 
     results_df = make_df(
-        query("""
+        query(
+            """
             SELECT
                 roll_no,
                 course_code,
@@ -2188,8 +3166,10 @@ elif page == "Reports":
                 total,
                 percentage,
                 grade
+
             FROM results
-        """),
+            """
+        ),
         [
             "Roll Number",
             "Course",
@@ -2241,9 +3221,9 @@ elif page == "Reports":
                 index=False
             )
 
-            mapping_df.to_excel(
+            mappings_df.to_excel(
                 writer,
-                sheet_name="Mapping",
+                sheet_name="CLO-PLO Mapping",
                 index=False
             )
 
@@ -2253,8 +3233,12 @@ elif page == "Reports":
                 index=False
             )
 
+        st.success(
+            "Excel report is ready."
+        )
+
         st.download_button(
-            "DOWNLOAD EXCEL REPORT",
+            "⬇️ DOWNLOAD EXCEL REPORT",
             output.getvalue(),
             "Fast_Tutor_Report.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2272,8 +3256,18 @@ elif page == "Reports":
 # FOOTER
 # ============================================================
 
-st.sidebar.divider()
+st.divider()
 
-st.sidebar.caption(
-    "Fast Tutor • Student Performance System"
+st.markdown(
+    """
+    <div style="
+        text-align:center;
+        color:#98A2B3;
+        font-size:12px;
+        padding:10px;
+    ">
+        🎓 <b>Fast Tutor</b> • Student Performance System
+    </div>
+    """,
+    unsafe_allow_html=True
 )
