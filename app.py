@@ -6,30 +6,23 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-try:
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.units import inch
-    from reportlab.platypus import (
-        SimpleDocTemplate,
-        Table,
-        TableStyle,
-        Paragraph,
-        Spacer
-    )
-    REPORTLAB_AVAILABLE = True
-except Exception:
-    REPORTLAB_AVAILABLE = False
-
 
 # ============================================================
 # FAST TUTOR
-# CLO-PLO MAPPING MANAGEMENT SYSTEM
+# CLO-PLO MAPPING & STUDENT ASSESSMENT SYSTEM
+# ============================================================
+
+APP_NAME = "FAST TUTOR"
+APP_SUBTITLE = "CLO-PLO Mapping & Student Assessment System"
+DB_NAME = "fast_tutor.db"
+
+
+# ============================================================
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
-    page_title="Fast Tutor",
+    page_title="FAST TUTOR",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -37,48 +30,122 @@ st.set_page_config(
 
 
 # ============================================================
+# CUSTOM CSS
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+
+    .main-title {
+        font-size: 38px;
+        font-weight: 800;
+        margin-bottom: 0;
+    }
+
+    .sub-title {
+        font-size: 18px;
+        color: #666;
+        margin-top: 0;
+        margin-bottom: 25px;
+    }
+
+    .brand-box {
+        padding: 18px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #1f4e79, #2878b5);
+        color: white;
+        margin-bottom: 20px;
+    }
+
+    .brand-name {
+        font-size: 28px;
+        font-weight: 800;
+    }
+
+    .brand-description {
+        font-size: 14px;
+        opacity: 0.95;
+    }
+
+    .metric-box {
+        padding: 20px;
+        border-radius: 12px;
+        background: #f5f7fa;
+        border: 1px solid #e0e4e8;
+        text-align: center;
+    }
+
+    .metric-number {
+        font-size: 32px;
+        font-weight: 800;
+    }
+
+    .metric-label {
+        font-size: 14px;
+        color: #666;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
 # DATABASE
 # ============================================================
 
-DB_FILE = "fast_tutor.db"
-
-
 @st.cache_resource
-def get_connection():
-    return sqlite3.connect(
-        DB_FILE,
+def get_database():
+
+    database = sqlite3.connect(
+        DB_NAME,
         check_same_thread=False,
         timeout=30
     )
 
+    return database
 
-conn = get_connection()
+
+db = get_database()
 
 
 def execute(query, params=()):
-    cur = conn.cursor()
+
+    cursor = db.cursor()
 
     try:
-        cur.execute(query, params)
-        conn.commit()
-        return cur
+
+        cursor.execute(
+            query,
+            params
+        )
+
+        db.commit()
+
+        return cursor
 
     except sqlite3.Error:
-        conn.rollback()
+
+        db.rollback()
+
         raise
 
 
-def query_df(query, params=()):
+def fetch_df(query, params=()):
+
     return pd.read_sql_query(
         query,
-        conn,
+        db,
         params=params
     )
 
 
 def initialize_database():
 
-    execute("""
+    execute(
+        """
         CREATE TABLE IF NOT EXISTS programs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT NOT NULL UNIQUE,
@@ -86,21 +153,25 @@ def initialize_database():
             department TEXT,
             created_at TEXT
         )
-    """)
+        """
+    )
 
-    execute("""
+    execute(
+        """
         CREATE TABLE IF NOT EXISTS plos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             program_id INTEGER NOT NULL,
-            plo_code TEXT NOT NULL,
+            code TEXT NOT NULL,
             name TEXT,
             description TEXT,
             created_at TEXT,
-            UNIQUE(program_id, plo_code)
+            UNIQUE(program_id, code)
         )
-    """)
+        """
+    )
 
-    execute("""
+    execute(
+        """
         CREATE TABLE IF NOT EXISTS courses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             program_id INTEGER NOT NULL,
@@ -111,23 +182,27 @@ def initialize_database():
             created_at TEXT,
             UNIQUE(program_id, code)
         )
-    """)
+        """
+    )
 
-    execute("""
+    execute(
+        """
         CREATE TABLE IF NOT EXISTS clos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             course_id INTEGER NOT NULL,
-            clo_code TEXT NOT NULL,
+            code TEXT NOT NULL,
             description TEXT,
             bloom_level TEXT,
             assessment TEXT,
             target REAL DEFAULT 70,
             created_at TEXT,
-            UNIQUE(course_id, clo_code)
+            UNIQUE(course_id, code)
         )
-    """)
+        """
+    )
 
-    execute("""
+    execute(
+        """
         CREATE TABLE IF NOT EXISTS mappings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             clo_id INTEGER NOT NULL,
@@ -135,9 +210,11 @@ def initialize_database():
             strength INTEGER NOT NULL DEFAULT 0,
             UNIQUE(clo_id, plo_id)
         )
-    """)
+        """
+    )
 
-    execute("""
+    execute(
+        """
         CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             roll_number TEXT NOT NULL UNIQUE,
@@ -148,9 +225,11 @@ def initialize_database():
             semester INTEGER,
             created_at TEXT
         )
-    """)
+        """
+    )
 
-    execute("""
+    execute(
+        """
         CREATE TABLE IF NOT EXISTS assessments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             course_id INTEGER NOT NULL,
@@ -158,11 +237,14 @@ def initialize_database():
             assessment_type TEXT,
             total_marks REAL DEFAULT 100,
             assessment_date TEXT,
-            created_at TEXT
+            created_at TEXT,
+            UNIQUE(course_id, name)
         )
-    """)
+        """
+    )
 
-    execute("""
+    execute(
+        """
         CREATE TABLE IF NOT EXISTS results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             assessment_id INTEGER NOT NULL,
@@ -176,32 +258,37 @@ def initialize_database():
                 clo_id
             )
         )
-    """)
+        """
+    )
 
 
 initialize_database()
 
 
 # ============================================================
-# HELPERS
+# HELPER FUNCTIONS
 # ============================================================
 
 def clean(value):
+
     if value is None:
         return ""
 
     try:
+
         if pd.isna(value):
             return ""
+
     except Exception:
         pass
 
     return str(value).strip()
 
 
-def normalize_column(value):
+def normalize_column(column):
+
     return (
-        str(value)
+        str(column)
         .strip()
         .lower()
         .replace(" ", "_")
@@ -210,144 +297,149 @@ def normalize_column(value):
     )
 
 
-def read_uploaded_file(uploaded):
+def read_file(uploaded_file):
 
-    if uploaded.name.lower().endswith(".csv"):
+    if uploaded_file.name.lower().endswith(".csv"):
+
         return pd.read_csv(
-            uploaded,
+            uploaded_file,
             dtype=str
         )
 
     return pd.read_excel(
-        uploaded,
+        uploaded_file,
         dtype=str
     )
 
 
-def get_programs():
+def programs_df():
 
-    return query_df("""
+    return fetch_df(
+        """
         SELECT *
         FROM programs
         ORDER BY code
-    """)
+        """
+    )
 
 
-def get_plos():
+def plos_df():
 
-    return query_df("""
+    return fetch_df(
+        """
         SELECT
             plos.*,
             programs.code AS program_code,
             programs.name AS program_name
         FROM plos
-        LEFT JOIN programs
+        JOIN programs
             ON plos.program_id = programs.id
         ORDER BY
             programs.code,
-            plos.plo_code
-    """)
+            plos.code
+        """
+    )
 
 
-def get_courses():
+def courses_df():
 
-    return query_df("""
+    return fetch_df(
+        """
         SELECT
             courses.*,
             programs.code AS program_code,
             programs.name AS program_name
         FROM courses
-        LEFT JOIN programs
+        JOIN programs
             ON courses.program_id = programs.id
         ORDER BY
             programs.code,
             courses.code
-    """)
+        """
+    )
 
 
-def get_clos():
+def clos_df():
 
-    return query_df("""
+    return fetch_df(
+        """
         SELECT
             clos.*,
             courses.code AS course_code,
             courses.name AS course_name
         FROM clos
-        LEFT JOIN courses
+        JOIN courses
             ON clos.course_id = courses.id
         ORDER BY
             courses.code,
-            clos.clo_code
-    """)
+            clos.code
+        """
+    )
 
 
-def get_students():
+def students_df():
 
-    return query_df("""
+    return fetch_df(
+        """
         SELECT
             students.*,
             programs.code AS program_code
         FROM students
         LEFT JOIN programs
             ON students.program_id = programs.id
-        ORDER BY students.roll_number
-    """)
+        ORDER BY
+            students.roll_number
+        """
+    )
 
 
-def get_assessments():
+def assessments_df():
 
-    return query_df("""
+    return fetch_df(
+        """
         SELECT
             assessments.*,
             courses.code AS course_code,
             courses.name AS course_name
         FROM assessments
-        LEFT JOIN courses
+        JOIN courses
             ON assessments.course_id = courses.id
         ORDER BY
-            assessments.assessment_date DESC,
             assessments.id DESC
-    """)
+        """
+    )
 
 
-def program_options():
+def program_choices():
 
-    df = get_programs()
+    data = programs_df()
 
     return {
-        f"{r['code']} — {r['name']}": int(r["id"])
-        for _, r in df.iterrows()
+        f"{row['code']} - {row['name']}":
+        int(row["id"])
+        for _, row in data.iterrows()
     }
 
 
-def course_options():
+def course_choices():
 
-    df = get_courses()
+    data = courses_df()
 
     return {
-        f"{r['code']} — {r['name']}": int(r["id"])
-        for _, r in df.iterrows()
+        f"{row['code']} - {row['name']}":
+        int(row["id"])
+        for _, row in data.iterrows()
     }
 
 
-def student_options():
+def assessment_choices():
 
-    df = get_students()
-
-    return {
-        f"{r['roll_number']} — {r['name']}": int(r["id"])
-        for _, r in df.iterrows()
-    }
-
-
-def assessment_options():
-
-    df = get_assessments()
+    data = assessments_df()
 
     return {
-        f"{r['course_code']} | {r['name']} | {r['assessment_date']}":
-        int(r["id"])
-        for _, r in df.iterrows()
+        f"{row['course_code']} | {row['name']}":
+        int(row["id"])
+        for _, row in data.iterrows()
     }
 
 
@@ -355,27 +447,67 @@ def assessment_options():
 # SIDEBAR
 # ============================================================
 
-st.sidebar.title("🎓 Fast Tutor")
+with st.sidebar:
 
-st.sidebar.caption(
-    "CLO–PLO Mapping & Outcome Assessment System"
-)
+    st.markdown(
+        """
+        <div class="brand-box">
+            <div class="brand-name">🎓 FAST TUTOR</div>
+            <div class="brand-description">
+                CLO-PLO Mapping & Student Assessment System
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-page = st.sidebar.radio(
-    "Navigation",
-    [
-        "🏠 Dashboard",
-        "🏫 Programs",
-        "🎯 PLO Management",
-        "📚 Course Management",
-        "🎯 CLO Management",
-        "🔗 CLO–PLO Mapping",
-        "📊 PLO Attainment",
-        "📑 Reports",
-        "📤 Import / Export",
-        "⚙️ Settings"
-    ]
-)
+    page = st.radio(
+        "FAST TUTOR MENU",
+        [
+            "🏠 Dashboard",
+            "🏫 Programs",
+            "🎯 PLO Management",
+            "📚 Course Management",
+            "📝 CLO Management",
+            "🔗 CLO-PLO Mapping",
+            "👨‍🎓 Student Management",
+            "📋 Assessment Management",
+            "📤 Bulk Marks Upload",
+            "📊 PLO Attainment",
+            "📑 Reports",
+            "📥 Import / Export",
+            "⚙️ Settings"
+        ]
+    )
+
+    st.divider()
+
+    st.caption(
+        "FAST TUTOR"
+    )
+
+    st.caption(
+        "Academic Outcome Assessment System"
+    )
+
+
+# ============================================================
+# HEADER FUNCTION
+# ============================================================
+
+def page_header(title, subtitle=""):
+
+    st.markdown(
+        f"""
+        <div class="main-title">
+            🎓 {title}
+        </div>
+        <div class="sub-title">
+            {subtitle}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # ============================================================
@@ -384,216 +516,220 @@ page = st.sidebar.radio(
 
 if page == "🏠 Dashboard":
 
-    st.title("🎓 Fast Tutor")
-    st.subheader(
-        "CLO–PLO Mapping Management System"
+    page_header(
+        "FAST TUTOR",
+        "CLO-PLO Mapping & Student Assessment Dashboard"
     )
 
-    programs = get_programs()
-    plos = get_plos()
-    courses = get_courses()
-    clos = get_clos()
-    students = get_students()
-    assessments = get_assessments()
+    programs = programs_df()
+    plos = plos_df()
+    courses = courses_df()
+    clos = clos_df()
+    students = students_df()
+    assessments = assessments_df()
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+
+        st.metric(
+            "🏫 Programs",
+            len(programs)
+        )
+
+    with c2:
+
+        st.metric(
+            "📚 Courses",
+            len(courses)
+        )
+
+    with c3:
+
+        st.metric(
+            "📝 CLOs",
+            len(clos)
+        )
+
+    with c4:
+
+        st.metric(
+            "🎯 PLOs",
+            len(plos)
+        )
+
+    st.divider()
 
     c1, c2, c3, c4 = st.columns(4)
 
     c1.metric(
-        "Programs",
-        len(programs)
+        "👨‍🎓 Students",
+        len(students)
     )
 
     c2.metric(
-        "Courses",
-        len(courses)
+        "📋 Assessments",
+        len(assessments)
+    )
+
+    mappings = fetch_df(
+        """
+        SELECT *
+        FROM mappings
+        WHERE strength > 0
+        """
     )
 
     c3.metric(
-        "CLOs",
-        len(clos)
+        "🔗 Active Mappings",
+        len(mappings)
     )
 
+    if len(plos) > 0:
+
+        mapped_plo_ids = set(
+            mappings["plo_id"].tolist()
+        ) if not mappings.empty else set()
+
+        weak_count = len(
+            [
+                x
+                for x in plos["id"]
+                if x not in mapped_plo_ids
+            ]
+        )
+
+    else:
+
+        weak_count = 0
+
     c4.metric(
-        "PLOs",
-        len(plos)
+        "⚠️ Unmapped PLOs",
+        weak_count
     )
 
     st.divider()
 
-    if plos.empty:
+    left, right = st.columns(2)
 
-        st.info(
-            "Add Programs, PLOs, Courses and CLOs "
-            "to start building your mapping."
+    with left:
+
+        st.subheader(
+            "📊 PLO Coverage"
         )
 
-    else:
+        if plos.empty:
 
-        mappings = query_df("""
-            SELECT
-                mappings.*,
-                plos.plo_code,
-                clos.clo_code
-            FROM mappings
-            JOIN plos
-                ON mappings.plo_id = plos.id
-            JOIN clos
-                ON mappings.clo_id = clos.id
-        """)
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-
-            st.subheader(
-                "📊 PLO Coverage"
+            st.info(
+                "Add PLOs to see coverage."
             )
 
-            coverage = []
+        else:
+
+            coverage_rows = []
 
             for _, plo in plos.iterrows():
 
-                count = 0
+                count = fetch_df(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM mappings
+                    WHERE
+                        plo_id = ?
+                        AND strength > 0
+                    """,
+                    (int(plo["id"]),)
+                ).iloc[0]["count"]
 
-                if not mappings.empty:
-
-                    count = len(
-                        mappings[
-                            (
-                                mappings["plo_id"]
-                                ==
-                                plo["id"]
-                            )
-                            &
-                            (
-                                mappings["strength"]
-                                > 0
-                            )
-                        ]
-                    )
-
-                coverage.append(
+                coverage_rows.append(
                     {
-                        "PLO": plo["plo_code"],
-                        "Mapped CLOs": count
+                        "PLO": plo["code"],
+                        "Mapped CLOs": int(count)
                     }
                 )
 
-            coverage_df = pd.DataFrame(
-                coverage
+            coverage = pd.DataFrame(
+                coverage_rows
             )
 
-            if not coverage_df.empty:
-
-                fig = px.bar(
-                    coverage_df,
-                    x="PLO",
-                    y="Mapped CLOs",
-                    title="CLO Coverage per PLO"
-                )
-
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True
-                )
-
-        with col2:
-
-            st.subheader(
-                "🔗 Mapping Strength"
+            fig = px.bar(
+                coverage,
+                x="PLO",
+                y="Mapped CLOs",
+                title="CLO Coverage by PLO"
             )
 
-            if mappings.empty:
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
 
-                st.info(
-                    "No mappings created yet."
+    with right:
+
+        st.subheader(
+            "🔗 Mapping Strength"
+        )
+
+        if mappings.empty:
+
+            st.info(
+                "No mappings available."
+            )
+
+        else:
+
+            strength = (
+                mappings
+                .groupby("strength")
+                .size()
+                .reset_index(
+                    name="Count"
                 )
+            )
 
-            else:
-
-                strength_df = (
-                    mappings
-                    .groupby("strength")
-                    .size()
-                    .reset_index(
-                        name="Mappings"
-                    )
+            strength["Level"] = (
+                strength["strength"]
+                .map(
+                    {
+                        1: "Low",
+                        2: "Medium",
+                        3: "High"
+                    }
                 )
+            )
 
-                strength_df["Level"] = (
-                    strength_df["strength"]
-                    .map(
-                        {
-                            0: "None",
-                            1: "Low",
-                            2: "Medium",
-                            3: "High"
-                        }
-                    )
-                )
+            fig = px.bar(
+                strength,
+                x="Level",
+                y="Count",
+                title="CLO-PLO Mapping Strength"
+            )
 
-                fig = px.bar(
-                    strength_df,
-                    x="Level",
-                    y="Mappings",
-                    title="CLO–PLO Mapping Strength"
-                )
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
 
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True
-                )
+    st.divider()
 
     st.subheader(
-        "📌 System Summary"
+        "🚀 FAST TUTOR Workflow"
     )
 
-    a, b, c = st.columns(3)
-
-    a.metric(
-        "Students",
-        len(students)
+    st.markdown(
+        """
+        **1. Create Program** →  
+        **2. Add PLOs** →  
+        **3. Add Courses** →  
+        **4. Add CLOs** →  
+        **5. Map CLOs to PLOs** →  
+        **6. Import Students in Bulk** →  
+        **7. Create Assessment** →  
+        **8. Upload Complete Class Marks** →  
+        **9. Calculate CLO/PLO Attainment** →  
+        **10. Generate Reports**
+        """
     )
-
-    b.metric(
-        "Assessments",
-        len(assessments)
-    )
-
-    if not plos.empty:
-
-        unmapped = 0
-
-        mappings = query_df("""
-            SELECT *
-            FROM mappings
-            WHERE strength > 0
-        """)
-
-        for _, plo in plos.iterrows():
-
-            if mappings.empty:
-
-                unmapped += 1
-
-            elif not (
-                mappings["plo_id"]
-                == plo["id"]
-            ).any():
-
-                unmapped += 1
-
-        c.metric(
-            "Unmapped PLOs",
-            unmapped
-        )
-
-    else:
-
-        c.metric(
-            "Unmapped PLOs",
-            0
-        )
 
 
 # ============================================================
@@ -602,18 +738,21 @@ if page == "🏠 Dashboard":
 
 elif page == "🏫 Programs":
 
-    st.title("🏫 Programs")
+    page_header(
+        "Program Management",
+        "Create and manage academic programs"
+    )
 
     tab1, tab2 = st.tabs(
         [
             "➕ Add Program",
-            "📋 Program List"
+            "📋 Programs"
         ]
     )
 
     with tab1:
 
-        with st.form("add_program"):
+        with st.form("program_form"):
 
             code = st.text_input(
                 "Program Code",
@@ -627,19 +766,25 @@ elif page == "🏫 Programs":
 
             department = st.text_input(
                 "Department",
-                placeholder="Computer Science"
+                placeholder="Department of Computer Science"
             )
 
-            submitted = st.form_submit_button(
-                "Save Program"
+            submit = st.form_submit_button(
+                "💾 Save Program"
             )
 
-            if submitted:
+            if submit:
 
-                if not code.strip() or not name.strip():
+                if not code.strip():
 
                     st.error(
-                        "Program code and name are required."
+                        "Program code is required."
+                    )
+
+                elif not name.strip():
+
+                    st.error(
+                        "Program name is required."
                     )
 
                 else:
@@ -649,7 +794,12 @@ elif page == "🏫 Programs":
                         execute(
                             """
                             INSERT INTO programs
-                            (code, name, department, created_at)
+                            (
+                                code,
+                                name,
+                                department,
+                                created_at
+                            )
                             VALUES (?, ?, ?, ?)
                             """,
                             (
@@ -669,13 +819,15 @@ elif page == "🏫 Programs":
                     except sqlite3.IntegrityError:
 
                         st.error(
-                            "This program code already exists."
+                            "A program with this code already exists."
                         )
 
     with tab2:
 
+        data = programs_df()
+
         st.dataframe(
-            get_programs(),
+            data,
             use_container_width=True,
             hide_index=True
         )
@@ -687,14 +839,17 @@ elif page == "🏫 Programs":
 
 elif page == "🎯 PLO Management":
 
-    st.title("🎯 PLO Management")
+    page_header(
+        "PLO Management",
+        "Define Program Learning Outcomes"
+    )
 
-    programs = program_options()
+    programs = program_choices()
 
     if not programs:
 
         st.warning(
-            "Create a program first."
+            "Please create a program first."
         )
 
     else:
@@ -713,26 +868,26 @@ elif page == "🎯 PLO Management":
                 list(programs.keys())
             )
 
-            plo_code = st.text_input(
+            code = st.text_input(
                 "PLO Code",
                 placeholder="PLO1"
             )
 
-            plo_name = st.text_input(
+            name = st.text_input(
                 "PLO Name",
                 placeholder="Knowledge of Computing"
             )
 
             description = st.text_area(
-                "Description"
+                "PLO Description"
             )
 
             if st.button(
-                "Save PLO",
+                "💾 Save PLO",
                 type="primary"
             ):
 
-                if not plo_code.strip():
+                if not code.strip():
 
                     st.error(
                         "PLO code is required."
@@ -747,7 +902,7 @@ elif page == "🎯 PLO Management":
                             INSERT INTO plos
                             (
                                 program_id,
-                                plo_code,
+                                code,
                                 name,
                                 description,
                                 created_at
@@ -756,15 +911,15 @@ elif page == "🎯 PLO Management":
                             """,
                             (
                                 programs[program],
-                                plo_code.strip(),
-                                plo_name.strip(),
+                                code.strip(),
+                                name.strip(),
                                 description.strip(),
                                 datetime.now().isoformat()
                             )
                         )
 
                         st.success(
-                            "PLO saved successfully."
+                            "PLO added successfully."
                         )
 
                         st.rerun()
@@ -778,7 +933,7 @@ elif page == "🎯 PLO Management":
         with tab2:
 
             st.dataframe(
-                get_plos(),
+                plos_df(),
                 use_container_width=True,
                 hide_index=True
             )
@@ -790,14 +945,17 @@ elif page == "🎯 PLO Management":
 
 elif page == "📚 Course Management":
 
-    st.title("📚 Course Management")
+    page_header(
+        "Course Management",
+        "Create and manage courses"
+    )
 
-    programs = program_options()
+    programs = program_choices()
 
     if not programs:
 
         st.warning(
-            "Create a program first."
+            "Please create a program first."
         )
 
     else:
@@ -805,7 +963,7 @@ elif page == "📚 Course Management":
         tab1, tab2 = st.tabs(
             [
                 "➕ Add Course",
-                "📋 Course List"
+                "📋 Courses"
             ]
         )
 
@@ -832,24 +990,23 @@ elif page == "📚 Course Management":
 
                 credit_hours = st.number_input(
                     "Credit Hours",
-                    min_value=0.5,
-                    max_value=10.0,
-                    value=3.0,
-                    step=0.5
+                    0.5,
+                    10.0,
+                    3.0,
+                    0.5
                 )
 
             with col2:
 
                 semester = st.number_input(
                     "Semester",
-                    min_value=1,
-                    max_value=12,
-                    value=1,
-                    step=1
+                    1,
+                    12,
+                    1
                 )
 
             if st.button(
-                "Save Course",
+                "💾 Save Course",
                 type="primary"
             ):
 
@@ -887,7 +1044,7 @@ elif page == "📚 Course Management":
                         )
 
                         st.success(
-                            "Course saved successfully."
+                            "Course added successfully."
                         )
 
                         st.rerun()
@@ -901,7 +1058,7 @@ elif page == "📚 Course Management":
         with tab2:
 
             st.dataframe(
-                get_courses(),
+                courses_df(),
                 use_container_width=True,
                 hide_index=True
             )
@@ -911,16 +1068,19 @@ elif page == "📚 Course Management":
 # CLO MANAGEMENT
 # ============================================================
 
-elif page == "🎯 CLO Management":
+elif page == "📝 CLO Management":
 
-    st.title("🎯 CLO Management")
+    page_header(
+        "CLO Management",
+        "Define Course Learning Outcomes"
+    )
 
-    courses = course_options()
+    courses = course_choices()
 
     if not courses:
 
         st.warning(
-            "Create a course first."
+            "Please create a course first."
         )
 
     else:
@@ -939,7 +1099,7 @@ elif page == "🎯 CLO Management":
                 list(courses.keys())
             )
 
-            clo_code = st.text_input(
+            code = st.text_input(
                 "CLO Code",
                 placeholder="CLO1"
             )
@@ -970,18 +1130,18 @@ elif page == "🎯 CLO Management":
 
             target = st.number_input(
                 "Target Attainment (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=70.0,
-                step=1.0
+                0.0,
+                100.0,
+                70.0,
+                1.0
             )
 
             if st.button(
-                "Save CLO",
+                "💾 Save CLO",
                 type="primary"
             ):
 
-                if not clo_code.strip():
+                if not code.strip():
 
                     st.error(
                         "CLO code is required."
@@ -996,7 +1156,7 @@ elif page == "🎯 CLO Management":
                             INSERT INTO clos
                             (
                                 course_id,
-                                clo_code,
+                                code,
                                 description,
                                 bloom_level,
                                 assessment,
@@ -1007,7 +1167,7 @@ elif page == "🎯 CLO Management":
                             """,
                             (
                                 courses[course],
-                                clo_code.strip(),
+                                code.strip(),
                                 description.strip(),
                                 bloom,
                                 assessment.strip(),
@@ -1017,7 +1177,7 @@ elif page == "🎯 CLO Management":
                         )
 
                         st.success(
-                            "CLO saved successfully."
+                            "CLO added successfully."
                         )
 
                         st.rerun()
@@ -1031,7 +1191,7 @@ elif page == "🎯 CLO Management":
         with tab2:
 
             st.dataframe(
-                get_clos(),
+                clos_df(),
                 use_container_width=True,
                 hide_index=True
             )
@@ -1041,230 +1201,1047 @@ elif page == "🎯 CLO Management":
 # CLO-PLO MAPPING
 # ============================================================
 
-elif page == "🔗 CLO–PLO Mapping":
+elif page == "🔗 CLO-PLO Mapping":
 
-    st.title("🔗 CLO–PLO Mapping")
+    page_header(
+        "CLO-PLO Mapping",
+        "Map each CLO to the appropriate PLO"
+    )
 
-    programs = get_programs()
-    courses = get_courses()
-    clos = get_clos()
-    plos = get_plos()
+    courses = courses_df()
+    plos = plos_df()
+    clos = clos_df()
 
-    if clos.empty or plos.empty:
+    if courses.empty:
 
         st.warning(
-            "You need both CLOs and PLOs before creating mappings."
+            "Please create courses first."
+        )
+
+    elif plos.empty:
+
+        st.warning(
+            "Please create PLOs first."
+        )
+
+    elif clos.empty:
+
+        st.warning(
+            "Please create CLOs first."
         )
 
     else:
 
-        st.info(
-            "Mapping scale: 0 = No Mapping, "
-            "1 = Low, 2 = Medium, 3 = High"
-        )
+        course_display = {
+            f"{r['code']} - {r['name']}":
+            int(r["id"])
+            for _, r in courses.iterrows()
+        }
 
         selected_course = st.selectbox(
             "Select Course",
-            [
-                f"{r['code']} — {r['name']}"
-                for _, r in courses.iterrows()
-            ]
+            list(course_display.keys())
         )
 
-        course_code = selected_course.split(
-            " — "
-        )[0]
+        course_id = course_display[
+            selected_course
+        ]
 
-        course_id = int(
-            courses[
-                courses["code"] == course_code
-            ].iloc[0]["id"]
+        selected_course_row = courses[
+            courses["id"] == course_id
+        ].iloc[0]
+
+        program_id = int(
+            selected_course_row["program_id"]
         )
 
         course_clos = clos[
             clos["course_id"] == course_id
         ]
 
-        if course_clos.empty:
+        program_plos = plos[
+            plos["program_id"] == program_id
+        ]
+
+        if program_plos.empty:
 
             st.warning(
-                "This course has no CLOs."
+                "No PLOs have been created for this program."
             )
 
         else:
 
-            program_ids = courses[
-                courses["id"] == course_id
-            ]["program_id"].tolist()
+            st.info(
+                "0 = No Mapping | 1 = Low | "
+                "2 = Medium | 3 = High"
+            )
 
-            if program_ids:
+            matrix_rows = []
 
-                program_id = program_ids[0]
+            for _, clo in course_clos.iterrows():
 
-                program_plos = plos[
-                    plos["program_id"] == program_id
-                ]
+                row = {
+                    "CLO": clo["code"]
+                }
 
-            else:
+                for _, plo in program_plos.iterrows():
 
-                program_plos = plos
+                    existing = fetch_df(
+                        """
+                        SELECT strength
+                        FROM mappings
+                        WHERE
+                            clo_id = ?
+                            AND plo_id = ?
+                        """,
+                        (
+                            int(clo["id"]),
+                            int(plo["id"])
+                        )
+                    )
 
-            if program_plos.empty:
+                    if existing.empty:
 
-                st.warning(
-                    "No PLOs exist for this program."
+                        row[
+                            plo["code"]
+                        ] = 0
+
+                    else:
+
+                        row[
+                            plo["code"]
+                        ] = int(
+                            existing.iloc[0][
+                                "strength"
+                            ]
+                        )
+
+                matrix_rows.append(row)
+
+            matrix = pd.DataFrame(
+                matrix_rows
+            )
+
+            st.subheader(
+                "Current Mapping Matrix"
+            )
+
+            st.dataframe(
+                matrix,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.subheader(
+                "Edit Mapping"
+            )
+
+            for _, clo in course_clos.iterrows():
+
+                st.markdown(
+                    f"#### {clo['code']}: {clo['description']}"
                 )
 
-            else:
-
-                st.subheader(
-                    "CLO–PLO Matrix"
+                cols = st.columns(
+                    len(program_plos)
                 )
 
-                matrix_data = []
+                for i, (_, plo) in enumerate(
+                    program_plos.iterrows()
+                ):
 
-                for _, clo in course_clos.iterrows():
+                    existing = fetch_df(
+                        """
+                        SELECT strength
+                        FROM mappings
+                        WHERE
+                            clo_id = ?
+                            AND plo_id = ?
+                        """,
+                        (
+                            int(clo["id"]),
+                            int(plo["id"])
+                        )
+                    )
 
-                    row = {
-                        "CLO": clo["clo_code"]
-                    }
+                    current = 0
 
-                    for _, plo in program_plos.iterrows():
+                    if not existing.empty:
 
-                        existing = query_df(
-                            """
-                            SELECT strength
-                            FROM mappings
-                            WHERE
-                                clo_id = ?
-                                AND plo_id = ?
-                            """,
-                            (
-                                int(clo["id"]),
-                                int(plo["id"])
+                        current = int(
+                            existing.iloc[0]["strength"]
+                        )
+
+                    with cols[i]:
+
+                        value = st.selectbox(
+                            plo["code"],
+                            [0, 1, 2, 3],
+                            index=current,
+                            key=(
+                                f"mapping_"
+                                f"{clo['id']}_"
+                                f"{plo['id']}"
                             )
                         )
 
-                        if existing.empty:
+                        if st.button(
+                            f"Save {clo['code']} → {plo['code']}",
+                            key=(
+                                f"save_"
+                                f"{clo['id']}_"
+                                f"{plo['id']}"
+                            )
+                        ):
 
-                            strength = 0
+                            execute(
+                                """
+                                INSERT INTO mappings
+                                (
+                                    clo_id,
+                                    plo_id,
+                                    strength
+                                )
+                                VALUES (?, ?, ?)
+                                ON CONFLICT(
+                                    clo_id,
+                                    plo_id
+                                )
+                                DO UPDATE SET
+                                    strength =
+                                    excluded.strength
+                                """,
+                                (
+                                    int(clo["id"]),
+                                    int(plo["id"]),
+                                    value
+                                )
+                            )
+
+                            st.success(
+                                "Mapping saved."
+                            )
+
+                            st.rerun()
+
+
+# ============================================================
+# STUDENT MANAGEMENT
+# ============================================================
+
+elif page == "👨‍🎓 Student Management":
+
+    page_header(
+        "Student Management",
+        "Manage students by roll number and name"
+    )
+
+    tab1, tab2 = st.tabs(
+        [
+            "➕ Add Student",
+            "📋 Student List"
+        ]
+    )
+
+    with tab1:
+
+        st.info(
+            "For a complete class, use "
+            "'Bulk Marks Upload → Import Students' "
+            "instead of entering students individually."
+        )
+
+        programs = program_choices()
+
+        with st.form("student_form"):
+
+            roll_number = st.text_input(
+                "Roll Number",
+                placeholder="2026-CS-001"
+            )
+
+            name = st.text_input(
+                "Student Name",
+                placeholder="Muhammad Ali"
+            )
+
+            email = st.text_input(
+                "Email"
+            )
+
+            section = st.text_input(
+                "Section",
+                placeholder="A"
+            )
+
+            semester = st.number_input(
+                "Semester",
+                1,
+                12,
+                1
+            )
+
+            program = None
+
+            if programs:
+
+                program = st.selectbox(
+                    "Program",
+                    list(programs.keys())
+                )
+
+            submit = st.form_submit_button(
+                "💾 Save Student"
+            )
+
+            if submit:
+
+                if not roll_number.strip():
+
+                    st.error(
+                        "Roll number is required."
+                    )
+
+                elif not name.strip():
+
+                    st.error(
+                        "Student name is required."
+                    )
+
+                else:
+
+                    try:
+
+                        program_id = (
+                            programs[program]
+                            if program
+                            else None
+                        )
+
+                        execute(
+                            """
+                            INSERT INTO students
+                            (
+                                roll_number,
+                                name,
+                                email,
+                                program_id,
+                                section,
+                                semester,
+                                created_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                roll_number.strip(),
+                                name.strip(),
+                                email.strip(),
+                                program_id,
+                                section.strip(),
+                                semester,
+                                datetime.now().isoformat()
+                            )
+                        )
+
+                        st.success(
+                            "Student saved successfully."
+                        )
+
+                        st.rerun()
+
+                    except sqlite3.IntegrityError:
+
+                        st.error(
+                            "This roll number already exists."
+                        )
+
+    with tab2:
+
+        students = students_df()
+
+        st.dataframe(
+            students,
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+# ============================================================
+# ASSESSMENT MANAGEMENT
+# ============================================================
+
+elif page == "📋 Assessment Management":
+
+    page_header(
+        "Assessment Management",
+        "Create assessments before uploading student marks"
+    )
+
+    courses = course_choices()
+
+    if not courses:
+
+        st.warning(
+            "Please create courses first."
+        )
+
+    else:
+
+        with st.form("assessment_form"):
+
+            course = st.selectbox(
+                "Course",
+                list(courses.keys())
+            )
+
+            name = st.text_input(
+                "Assessment Name",
+                placeholder="Midterm Examination"
+            )
+
+            assessment_type = st.selectbox(
+                "Assessment Type",
+                [
+                    "Midterm",
+                    "Final",
+                    "Quiz",
+                    "Assignment",
+                    "Project",
+                    "Practical",
+                    "Other"
+                ]
+            )
+
+            total_marks = st.number_input(
+                "Total Marks",
+                1.0,
+                1000.0,
+                100.0,
+                1.0
+            )
+
+            assessment_date = st.date_input(
+                "Assessment Date"
+            )
+
+            submit = st.form_submit_button(
+                "💾 Save Assessment"
+            )
+
+            if submit:
+
+                if not name.strip():
+
+                    st.error(
+                        "Assessment name is required."
+                    )
+
+                else:
+
+                    try:
+
+                        execute(
+                            """
+                            INSERT INTO assessments
+                            (
+                                course_id,
+                                name,
+                                assessment_type,
+                                total_marks,
+                                assessment_date,
+                                created_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                courses[course],
+                                name.strip(),
+                                assessment_type,
+                                total_marks,
+                                str(assessment_date),
+                                datetime.now().isoformat()
+                            )
+                        )
+
+                        st.success(
+                            "Assessment created successfully."
+                        )
+
+                        st.rerun()
+
+                    except sqlite3.IntegrityError:
+
+                        st.error(
+                            "This assessment already exists for this course."
+                        )
+
+        st.subheader(
+            "Existing Assessments"
+        )
+
+        st.dataframe(
+            assessments_df(),
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+# ============================================================
+# BULK MARKS UPLOAD
+# ============================================================
+
+elif page == "📤 Bulk Marks Upload":
+
+    page_header(
+        "Bulk Marks Upload",
+        "Upload the complete class results in one Excel or CSV file"
+    )
+
+    st.success(
+        "🚀 FAST TUTOR allows you to upload the marks "
+        "of the entire class at once. You do NOT need "
+        "to enter marks student by student."
+    )
+
+    assessments = assessments_df()
+
+    if assessments.empty:
+
+        st.warning(
+            "Please create an assessment first."
+        )
+
+    else:
+
+        assessment_map = assessment_choices()
+
+        selected = st.selectbox(
+            "Select Assessment",
+            list(assessment_map.keys())
+        )
+
+        assessment_id = assessment_map[
+            selected
+        ]
+
+        assessment = assessments[
+            assessments["id"] == assessment_id
+        ].iloc[0]
+
+        course_id = int(
+            assessment["course_id"]
+        )
+
+        all_clos = clos_df()
+
+        course_clos = all_clos[
+            all_clos["course_id"] == course_id
+        ]
+
+        if course_clos.empty:
+
+            st.warning(
+                "No CLOs exist for this course."
+            )
+
+        else:
+
+            clo_codes = [
+                clean(x)
+                for x in course_clos["code"]
+            ]
+
+            st.subheader(
+                "Step 1 — Download the marks template"
+            )
+
+            students = students_df()
+
+            template_columns = [
+                "roll_number",
+                "name"
+            ] + clo_codes
+
+            if students.empty:
+
+                template = pd.DataFrame(
+                    columns=template_columns
+                )
+
+            else:
+
+                template = students[
+                    [
+                        "roll_number",
+                        "name"
+                    ]
+                ].copy()
+
+                for clo in clo_codes:
+
+                    template[clo] = ""
+
+            st.dataframe(
+                template,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            csv_template = (
+                template
+                .to_csv(index=False)
+                .encode("utf-8-sig")
+            )
+
+            st.download_button(
+                "📥 Download CSV Template",
+                csv_template,
+                "FAST_TUTOR_MARKS_TEMPLATE.csv",
+                "text/csv"
+            )
+
+            excel_buffer = BytesIO()
+
+            with pd.ExcelWriter(
+                excel_buffer,
+                engine="openpyxl"
+            ) as writer:
+
+                template.to_excel(
+                    writer,
+                    index=False,
+                    sheet_name="Student Marks"
+                )
+
+            excel_buffer.seek(0)
+
+            st.download_button(
+                "📥 Download Excel Template",
+                excel_buffer,
+                "FAST_TUTOR_MARKS_TEMPLATE.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            st.divider()
+
+            st.subheader(
+                "Step 2 — Upload completed marks"
+            )
+
+            uploaded = st.file_uploader(
+                "Upload Excel or CSV",
+                type=[
+                    "xlsx",
+                    "xls",
+                    "csv"
+                ],
+                key="fast_tutor_marks"
+            )
+
+            if uploaded is not None:
+
+                try:
+
+                    data = read_file(
+                        uploaded
+                    )
+
+                    data.columns = [
+                        normalize_column(c)
+                        for c in data.columns
+                    ]
+
+                    aliases = {
+                        "roll_no": "roll_number",
+                        "rollno": "roll_number",
+                        "roll": "roll_number",
+                        "student_id": "roll_number",
+                        "studentid": "roll_number",
+                        "registration_no": "roll_number",
+                        "registration_number": "roll_number",
+                        "student_name": "name",
+                        "full_name": "name",
+                        "student": "name"
+                    }
+
+                    data = data.rename(
+                        columns=aliases
+                    )
+
+                    required = [
+                        "roll_number"
+                    ]
+
+                    missing = [
+                        column
+                        for column in required
+                        if column not in data.columns
+                    ]
+
+                    if missing:
+
+                        st.error(
+                            "Missing column: roll_number"
+                        )
+
+                    else:
+
+                        missing_clos = [
+                            clo
+                            for clo in clo_codes
+                            if clo not in data.columns
+                        ]
+
+                        if missing_clos:
+
+                            st.error(
+                                "The following CLO columns "
+                                "are missing: "
+                                + ", ".join(
+                                    missing_clos
+                                )
+                            )
 
                         else:
 
-                            strength = int(
-                                existing.iloc[0][
-                                    "strength"
+                            registered_students = students_df()
+
+                            registered_rolls = set(
+                                registered_students[
+                                    "roll_number"
                                 ]
+                                .astype(str)
+                                .str.strip()
                             )
 
-                        row[
-                            plo["plo_code"]
-                        ] = strength
+                            uploaded_rolls = (
+                                data[
+                                    "roll_number"
+                                ]
+                                .astype(str)
+                                .str.strip()
+                            )
 
-                    matrix_data.append(row)
+                            unknown_rolls = [
+                                roll
+                                for roll in uploaded_rolls
+                                if roll
+                                and roll not in registered_rolls
+                            ]
 
-                matrix_df = pd.DataFrame(
-                    matrix_data
-                )
+                            if unknown_rolls:
 
-                st.dataframe(
-                    matrix_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                                st.error(
+                                    "Some roll numbers are not "
+                                    "registered in FAST TUTOR."
+                                )
 
-                st.subheader(
-                    "✏️ Edit Mapping"
-                )
+                                st.write(
+                                    ", ".join(
+                                        unknown_rolls
+                                    )
+                                )
 
-                for _, clo in course_clos.iterrows():
+                                st.info(
+                                    "Import the student list first "
+                                    "from Student Management / Import-Export."
+                                )
 
-                    st.markdown(
-                        f"### {clo['clo_code']}"
+                            else:
+
+                                for clo in clo_codes:
+
+                                    data[clo] = pd.to_numeric(
+                                        data[clo],
+                                        errors="coerce"
+                                    )
+
+                                st.subheader(
+                                    "Step 3 — Preview marks"
+                                )
+
+                                st.dataframe(
+                                    data,
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+
+                                st.subheader(
+                                    "Step 4 — CLO total marks"
+                                )
+
+                                total_marks = {}
+
+                                columns = st.columns(
+                                    min(
+                                        4,
+                                        len(clo_codes)
+                                    )
+                                )
+
+                                for index, clo in enumerate(
+                                    clo_codes
+                                ):
+
+                                    with columns[
+                                        index % len(columns)
+                                    ]:
+
+                                        total_marks[
+                                            clo
+                                        ] = st.number_input(
+                                            f"{clo} Total Marks",
+                                            min_value=0.01,
+                                            value=10.0,
+                                            step=1.0,
+                                            key=(
+                                                "total_"
+                                                + str(
+                                                    assessment_id
+                                                )
+                                                + "_"
+                                                + clo
+                                            )
+                                        )
+
+                                errors = []
+
+                                for clo in clo_codes:
+
+                                    valid_marks = data[
+                                        clo
+                                    ].dropna()
+
+                                    if (
+                                        valid_marks < 0
+                                    ).any():
+
+                                        errors.append(
+                                            f"{clo}: negative marks found."
+                                        )
+
+                                    if (
+                                        valid_marks
+                                        > total_marks[clo]
+                                    ).any():
+
+                                        errors.append(
+                                            f"{clo}: marks exceed "
+                                            f"total marks."
+                                        )
+
+                                if errors:
+
+                                    st.error(
+                                        "Please correct these errors:"
+                                    )
+
+                                    for error in errors:
+
+                                        st.write(
+                                            "• "
+                                            + error
+                                        )
+
+                                else:
+
+                                    st.divider()
+
+                                    st.subheader(
+                                        "Step 5 — Import complete class"
+                                    )
+
+                                    confirm = st.checkbox(
+                                        "I confirm that the uploaded marks are correct."
+                                    )
+
+                                    if st.button(
+                                        "🚀 IMPORT ALL STUDENT MARKS",
+                                        type="primary",
+                                        disabled=not confirm
+                                    ):
+
+                                        inserted = 0
+                                        updated = 0
+
+                                        try:
+
+                                            db.execute(
+                                                "BEGIN"
+                                            )
+
+                                            student_lookup = {
+                                                str(
+                                                    row[
+                                                        "roll_number"
+                                                    ]
+                                                ).strip():
+                                                int(
+                                                    row["id"]
+                                                )
+                                                for _, row
+                                                in registered_students.iterrows()
+                                            }
+
+                                            clo_lookup = {
+                                                clean(
+                                                    row["code"]
+                                                ):
+                                                int(
+                                                    row["id"]
+                                                )
+                                                for _, row
+                                                in course_clos.iterrows()
+                                            }
+
+                                            for _, row in data.iterrows():
+
+                                                roll = clean(
+                                                    row[
+                                                        "roll_number"
+                                                    ]
+                                                )
+
+                                                if not roll:
+
+                                                    continue
+
+                                                student_id = (
+                                                    student_lookup[
+                                                        roll
+                                                    ]
+                                                )
+
+                                                for clo in clo_codes:
+
+                                                    mark = row[
+                                                        clo
+                                                    ]
+
+                                                    if pd.isna(
+                                                        mark
+                                                    ):
+
+                                                        continue
+
+                                                    obtained = float(
+                                                        mark
+                                                    )
+
+                                                    total = float(
+                                                        total_marks[
+                                                            clo
+                                                        ]
+                                                    )
+
+                                                    clo_id = (
+                                                        clo_lookup[
+                                                            clo
+                                                        ]
+                                                    )
+
+                                                    existing = db.execute(
+                                                        """
+                                                        SELECT id
+                                                        FROM results
+                                                        WHERE
+                                                            assessment_id = ?
+                                                            AND student_id = ?
+                                                            AND clo_id = ?
+                                                        """,
+                                                        (
+                                                            assessment_id,
+                                                            student_id,
+                                                            clo_id
+                                                        )
+                                                    ).fetchone()
+
+                                                    if existing:
+
+                                                        db.execute(
+                                                            """
+                                                            UPDATE results
+                                                            SET
+                                                                marks_obtained = ?,
+                                                                marks_total = ?
+                                                            WHERE id = ?
+                                                            """,
+                                                            (
+                                                                obtained,
+                                                                total,
+                                                                existing[0]
+                                                            )
+                                                        )
+
+                                                        updated += 1
+
+                                                    else:
+
+                                                        db.execute(
+                                                            """
+                                                            INSERT INTO results
+                                                            (
+                                                                assessment_id,
+                                                                student_id,
+                                                                clo_id,
+                                                                marks_obtained,
+                                                                marks_total
+                                                            )
+                                                            VALUES (?, ?, ?, ?, ?)
+                                                            """,
+                                                            (
+                                                                assessment_id,
+                                                                student_id,
+                                                                clo_id,
+                                                                obtained,
+                                                                total
+                                                            )
+                                                        )
+
+                                                        inserted += 1
+
+                                            db.commit()
+
+                                            st.success(
+                                                "🎉 FAST TUTOR: "
+                                                "ALL STUDENT MARKS "
+                                                "IMPORTED SUCCESSFULLY!"
+                                            )
+
+                                            a, b = st.columns(2)
+
+                                            a.metric(
+                                                "New Marks",
+                                                inserted
+                                            )
+
+                                            b.metric(
+                                                "Updated Marks",
+                                                updated
+                                            )
+
+                                        except Exception as error:
+
+                                            db.rollback()
+
+                                            st.error(
+                                                "The marks upload failed. "
+                                                "No partial data was saved."
+                                            )
+
+                                            st.exception(
+                                                error
+                                            )
+
+                except Exception as error:
+
+                    st.error(
+                        "Unable to read the uploaded file."
                     )
 
-                    cols = st.columns(
-                        len(program_plos)
+                    st.exception(
+                        error
                     )
-
-                    for i, (_, plo) in enumerate(
-                        program_plos.iterrows()
-                    ):
-
-                        existing = query_df(
-                            """
-                            SELECT strength
-                            FROM mappings
-                            WHERE
-                                clo_id = ?
-                                AND plo_id = ?
-                            """,
-                            (
-                                int(clo["id"]),
-                                int(plo["id"])
-                            )
-                        )
-
-                        current = 0
-
-                        if not existing.empty:
-
-                            current = int(
-                                existing.iloc[0][
-                                    "strength"
-                                ]
-                            )
-
-                        with cols[i]:
-
-                            value = st.selectbox(
-                                plo["plo_code"],
-                                [0, 1, 2, 3],
-                                index=current,
-                                key=(
-                                    f"map_"
-                                    f"{clo['id']}_"
-                                    f"{plo['id']}"
-                                )
-                            )
-
-                            if st.button(
-                                f"Save {clo['clo_code']} → {plo['plo_code']}",
-                                key=(
-                                    f"save_"
-                                    f"{clo['id']}_"
-                                    f"{plo['id']}"
-                                )
-                            ):
-
-                                execute(
-                                    """
-                                    INSERT INTO mappings
-                                    (
-                                        clo_id,
-                                        plo_id,
-                                        strength
-                                    )
-                                    VALUES (?, ?, ?)
-                                    ON CONFLICT(
-                                        clo_id,
-                                        plo_id
-                                    )
-                                    DO UPDATE SET
-                                        strength = excluded.strength
-                                    """,
-                                    (
-                                        int(clo["id"]),
-                                        int(plo["id"]),
-                                        value
-                                    )
-                                )
-
-                                st.success(
-                                    "Mapping saved."
-                                )
-
-                                st.rerun()
 
 
 # ============================================================
@@ -1273,23 +2250,20 @@ elif page == "🔗 CLO–PLO Mapping":
 
 elif page == "📊 PLO Attainment":
 
-    st.title("📊 PLO Attainment")
+    page_header(
+        "PLO Attainment",
+        "Calculate CLO and PLO attainment from uploaded student marks"
+    )
 
-    results = query_df(
+    results = fetch_df(
         """
         SELECT
-            results.id,
-            results.assessment_id,
-            results.student_id,
-            results.clo_id,
-            results.marks_obtained,
-            results.marks_total,
+            results.*,
             students.roll_number,
             students.name AS student_name,
-            clos.clo_code,
+            clos.code AS clo_code,
             clos.target,
-            courses.code AS course_code,
-            assessments.name AS assessment_name
+            courses.code AS course_code
         FROM results
         JOIN students
             ON results.student_id = students.id
@@ -1302,18 +2276,17 @@ elif page == "📊 PLO Attainment":
         """
     )
 
-    mappings = query_df(
+    mappings = fetch_df(
         """
         SELECT
             mappings.*,
-            plos.id AS plo_id,
-            plos.plo_code,
-            clos.clo_code
+            clos.code AS clo_code,
+            plos.code AS plo_code
         FROM mappings
-        JOIN plos
-            ON mappings.plo_id = plos.id
         JOIN clos
             ON mappings.clo_id = clos.id
+        JOIN plos
+            ON mappings.plo_id = plos.id
         WHERE mappings.strength > 0
         """
     )
@@ -1321,18 +2294,18 @@ elif page == "📊 PLO Attainment":
     if results.empty:
 
         st.info(
-            "No student results have been uploaded yet."
+            "No student marks have been uploaded yet."
         )
 
     elif mappings.empty:
 
         st.warning(
-            "Create CLO–PLO mappings first."
+            "Create CLO-PLO mappings first."
         )
 
     else:
 
-        results["clo_percentage"] = (
+        results["attainment"] = (
             results["marks_obtained"]
             /
             results["marks_total"]
@@ -1340,124 +2313,131 @@ elif page == "📊 PLO Attainment":
             100
         )
 
+        clo_attainment = (
+            results
+            .groupby("clo_code")
+            ["attainment"]
+            .mean()
+            .reset_index()
+        )
+
+        clo_attainment[
+            "Attainment (%)"
+        ] = clo_attainment[
+            "attainment"
+        ].round(2)
+
+        st.subheader(
+            "CLO Attainment"
+        )
+
+        st.dataframe(
+            clo_attainment[
+                [
+                    "clo_code",
+                    "Attainment (%)"
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
+
         plo_rows = []
 
-        for _, mapping in mappings.iterrows():
+        for plo_code in mappings[
+            "plo_code"
+        ].unique():
 
-            clo_code = mapping["clo_code"]
-            plo_code = mapping["plo_code"]
-            strength = float(
-                mapping["strength"]
-            )
-
-            clo_results = results[
-                results["clo_code"]
-                == clo_code
+            mapping_rows = mappings[
+                mappings["plo_code"]
+                == plo_code
             ]
 
-            if clo_results.empty:
+            values = []
 
-                continue
+            for _, mapping in mapping_rows.iterrows():
 
-            average = (
-                clo_results[
-                    "clo_percentage"
-                ].mean()
-            )
+                clo = mapping["clo_code"]
 
-            weighted = average * (
-                strength / 3.0
-            )
+                strength = float(
+                    mapping["strength"]
+                )
 
-            plo_rows.append(
-                {
-                    "PLO": plo_code,
-                    "CLO": clo_code,
-                    "Mapping Strength": strength,
-                    "CLO Attainment (%)": round(
-                        average,
-                        2
-                    ),
-                    "Weighted Contribution (%)": round(
-                        weighted,
-                        2
-                    )
-                }
-            )
+                clo_data = results[
+                    results["clo_code"] == clo
+                ]
 
-        contribution_df = pd.DataFrame(
+                if clo_data.empty:
+
+                    continue
+
+                clo_average = (
+                    clo_data["attainment"]
+                    .mean()
+                )
+
+                contribution = (
+                    clo_average
+                    *
+                    strength
+                    /
+                    3
+                )
+
+                values.append(
+                    contribution
+                )
+
+            if values:
+
+                plo_rows.append(
+                    {
+                        "PLO": plo_code,
+                        "PLO Attainment (%)":
+                        round(
+                            sum(values)
+                            /
+                            len(values),
+                            2
+                        )
+                    }
+                )
+
+        plo_df = pd.DataFrame(
             plo_rows
         )
 
-        if contribution_df.empty:
-
-            st.warning(
-                "No attainment could be calculated."
-            )
-
-        else:
-
-            summary = (
-                contribution_df
-                .groupby("PLO")
-                .agg(
-                    Contributions=(
-                        "Weighted Contribution (%)",
-                        "mean"
-                    ),
-                    CLOs=(
-                        "CLO",
-                        "count"
-                    )
-                )
-                .reset_index()
-            )
-
-            summary[
-                "PLO Attainment (%)"
-            ] = summary[
-                "Contributions"
-            ].round(2)
-
-            summary[
-                "Status"
-            ] = summary[
-                "PLO Attainment (%)"
-            ].apply(
-                lambda x:
-                "🟢 Strong"
-                if x >= 70
-                else
-                "🟠 Needs Improvement"
-                if x >= 50
-                else
-                "🔴 Weak"
-            )
+        if not plo_df.empty:
 
             st.subheader(
                 "PLO Attainment"
             )
 
+            plo_df[
+                "Status"
+            ] = plo_df[
+                "PLO Attainment (%)"
+            ].apply(
+                lambda x:
+                "🟢 Meets Target"
+                if x >= 70
+                else
+                "🔴 Below Target"
+            )
+
             st.dataframe(
-                summary[
-                    [
-                        "PLO",
-                        "CLOs",
-                        "PLO Attainment (%)",
-                        "Status"
-                    ]
-                ],
+                plo_df,
                 use_container_width=True,
                 hide_index=True
             )
 
             fig = px.bar(
-                summary,
+                plo_df,
                 x="PLO",
                 y="PLO Attainment (%)",
                 text_auto=".1f",
                 range_y=[0, 100],
-                title="PLO Attainment (%)"
+                title="PLO Attainment"
             )
 
             fig.add_hline(
@@ -1471,8 +2451,8 @@ elif page == "📊 PLO Attainment":
                 use_container_width=True
             )
 
-            weak = summary[
-                summary[
+            weak = plo_df[
+                plo_df[
                     "PLO Attainment (%)"
                 ] < 70
             ]
@@ -1502,30 +2482,33 @@ elif page == "📊 PLO Attainment":
 
 elif page == "📑 Reports":
 
-    st.title("📑 Reports")
+    page_header(
+        "FAST TUTOR Reports",
+        "Generate academic outcome reports"
+    )
 
-    report_type = st.selectbox(
+    report = st.selectbox(
         "Select Report",
         [
-            "CLO–PLO Matrix",
+            "CLO-PLO Matrix",
             "Course-wise Mapping",
             "Program-wide Mapping",
             "PLO Coverage",
+            "Student Results",
             "PLO Attainment",
-            "Weak PLO Report",
-            "Student Results"
+            "Weak PLO Report"
         ]
     )
 
-    if report_type == "CLO–PLO Matrix":
+    if report == "CLO-PLO Matrix":
 
-        data = query_df(
+        data = fetch_df(
             """
             SELECT
-                courses.code AS course,
-                clos.clo_code AS clo,
-                plos.plo_code AS plo,
-                mappings.strength
+                courses.code AS Course,
+                clos.code AS CLO,
+                plos.code AS PLO,
+                mappings.strength AS Strength
             FROM mappings
             JOIN clos
                 ON mappings.clo_id = clos.id
@@ -1535,8 +2518,8 @@ elif page == "📑 Reports":
                 ON mappings.plo_id = plos.id
             ORDER BY
                 courses.code,
-                clos.clo_code,
-                plos.plo_code
+                clos.code,
+                plos.code
             """
         )
 
@@ -1549,9 +2532,12 @@ elif page == "📑 Reports":
         else:
 
             matrix = data.pivot_table(
-                index=["course", "clo"],
-                columns="plo",
-                values="strength",
+                index=[
+                    "Course",
+                    "CLO"
+                ],
+                columns="PLO",
+                values="Strength",
                 fill_value=0
             ).reset_index()
 
@@ -1561,16 +2547,16 @@ elif page == "📑 Reports":
                 hide_index=True
             )
 
-    elif report_type == "Course-wise Mapping":
+    elif report == "Course-wise Mapping":
 
-        data = query_df(
+        data = fetch_df(
             """
             SELECT
-                courses.code AS course_code,
-                courses.name AS course_name,
-                clos.clo_code,
-                plos.plo_code,
-                mappings.strength
+                courses.code AS Course,
+                courses.name AS Course_Name,
+                clos.code AS CLO,
+                plos.code AS PLO,
+                mappings.strength AS Strength
             FROM mappings
             JOIN clos
                 ON mappings.clo_id = clos.id
@@ -1578,9 +2564,7 @@ elif page == "📑 Reports":
                 ON clos.course_id = courses.id
             JOIN plos
                 ON mappings.plo_id = plos.id
-            ORDER BY
-                courses.code,
-                clos.clo_code
+            ORDER BY courses.code
             """
         )
 
@@ -1590,16 +2574,16 @@ elif page == "📑 Reports":
             hide_index=True
         )
 
-    elif report_type == "Program-wide Mapping":
+    elif report == "Program-wide Mapping":
 
-        data = query_df(
+        data = fetch_df(
             """
             SELECT
-                programs.code AS program,
-                courses.code AS course,
-                clos.clo_code,
-                plos.plo_code,
-                mappings.strength
+                programs.code AS Program,
+                courses.code AS Course,
+                clos.code AS CLO,
+                plos.code AS PLO,
+                mappings.strength AS Strength
             FROM mappings
             JOIN clos
                 ON mappings.clo_id = clos.id
@@ -1621,15 +2605,15 @@ elif page == "📑 Reports":
             hide_index=True
         )
 
-    elif report_type == "PLO Coverage":
+    elif report == "PLO Coverage":
 
-        plos = get_plos()
+        plos = plos_df()
 
         rows = []
 
         for _, plo in plos.iterrows():
 
-            count = query_df(
+            count = fetch_df(
                 """
                 SELECT COUNT(*) AS total
                 FROM mappings
@@ -1637,12 +2621,14 @@ elif page == "📑 Reports":
                     plo_id = ?
                     AND strength > 0
                 """,
-                (int(plo["id"]),)
+                (
+                    int(plo["id"]),
+                )
             ).iloc[0]["total"]
 
             rows.append(
                 {
-                    "PLO": plo["plo_code"],
+                    "PLO": plo["code"],
                     "Name": plo["name"],
                     "Mapped CLOs": int(count)
                 }
@@ -1656,12 +2642,67 @@ elif page == "📑 Reports":
             hide_index=True
         )
 
-    elif report_type == "PLO Attainment":
+    elif report == "Student Results":
 
-        results = query_df(
+        data = fetch_df(
             """
             SELECT
-                clos.clo_code,
+                students.roll_number AS Roll_Number,
+                students.name AS Student_Name,
+                courses.code AS Course,
+                assessments.name AS Assessment,
+                clos.code AS CLO,
+                results.marks_obtained AS Marks,
+                results.marks_total AS Total_Marks
+            FROM results
+            JOIN students
+                ON results.student_id = students.id
+            JOIN assessments
+                ON results.assessment_id = assessments.id
+            JOIN courses
+                ON assessments.course_id = courses.id
+            JOIN clos
+                ON results.clo_id = clos.id
+            ORDER BY
+                students.roll_number
+            """
+        )
+
+        if not data.empty:
+
+            data["Percentage"] = (
+                data["Marks"]
+                /
+                data["Total_Marks"]
+                *
+                100
+            ).round(2)
+
+        st.dataframe(
+            data,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        csv = data.to_csv(
+            index=False
+        ).encode(
+            "utf-8-sig"
+        )
+
+        st.download_button(
+            "📥 Download Student Results",
+            csv,
+            "FAST_TUTOR_Student_Results.csv",
+            "text/csv"
+        )
+
+    elif report == "PLO Attainment":
+
+        results = fetch_df(
+            """
+            SELECT
+                clos.code AS CLO,
                 results.marks_obtained,
                 results.marks_total
             FROM results
@@ -1670,11 +2711,11 @@ elif page == "📑 Reports":
             """
         )
 
-        mappings = query_df(
+        mappings = fetch_df(
             """
             SELECT
-                plos.plo_code,
-                clos.clo_code,
+                plos.code AS PLO,
+                clos.code AS CLO,
                 mappings.strength
             FROM mappings
             JOIN plos
@@ -1688,7 +2729,7 @@ elif page == "📑 Reports":
         if results.empty or mappings.empty:
 
             st.info(
-                "Not enough data for attainment."
+                "Not enough data for PLO attainment."
             )
 
         else:
@@ -1703,38 +2744,33 @@ elif page == "📑 Reports":
 
             rows = []
 
-            for plo in mappings[
-                "plo_code"
-            ].unique():
+            for plo in mappings["PLO"].unique():
 
-                mappings_for_plo = mappings[
-                    mappings["plo_code"] == plo
+                mapping_rows = mappings[
+                    mappings["PLO"] == plo
                 ]
 
                 values = []
 
-                for _, mapping in (
-                    mappings_for_plo.iterrows()
-                ):
-
-                    clo = mapping["clo_code"]
-                    strength = mapping["strength"]
+                for _, mapping in mapping_rows.iterrows():
 
                     r = results[
-                        results["clo_code"] == clo
+                        results["CLO"]
+                        == mapping["CLO"]
                     ]
 
                     if not r.empty:
 
-                        avg = r[
+                        average = r[
                             "percentage"
                         ].mean()
 
                         values.append(
-                            avg *
-                            (
-                                strength / 3
-                            )
+                            average
+                            *
+                            mapping["strength"]
+                            /
+                            3
                         )
 
                 if values:
@@ -1744,7 +2780,8 @@ elif page == "📑 Reports":
                             "PLO": plo,
                             "Attainment (%)":
                             round(
-                                sum(values) /
+                                sum(values)
+                                /
                                 len(values),
                                 2
                             )
@@ -1759,11 +2796,11 @@ elif page == "📑 Reports":
                 hide_index=True
             )
 
-    elif report_type == "Weak PLO Report":
+    else:
 
-        plos = get_plos()
+        plos = plos_df()
 
-        mappings = query_df(
+        mappings = fetch_df(
             """
             SELECT *
             FROM mappings
@@ -1790,9 +2827,9 @@ elif page == "📑 Reports":
 
                 rows.append(
                     {
-                        "PLO": plo["plo_code"],
+                        "PLO": plo["code"],
                         "Name": plo["name"],
-                        "Issue": "Unmapped"
+                        "Problem": "Unmapped"
                     }
                 )
 
@@ -1801,7 +2838,7 @@ elif page == "📑 Reports":
         if data.empty:
 
             st.success(
-                "No unmapped PLOs."
+                "No unmapped PLOs found."
             )
 
         else:
@@ -1810,67 +2847,6 @@ elif page == "📑 Reports":
                 data,
                 use_container_width=True,
                 hide_index=True
-            )
-
-    elif report_type == "Student Results":
-
-        data = query_df(
-            """
-            SELECT
-                students.roll_number,
-                students.name,
-                courses.code AS course,
-                assessments.name AS assessment,
-                clos.clo_code,
-                results.marks_obtained,
-                results.marks_total
-            FROM results
-            JOIN students
-                ON results.student_id = students.id
-            JOIN assessments
-                ON results.assessment_id = assessments.id
-            JOIN courses
-                ON assessments.course_id = courses.id
-            JOIN clos
-                ON results.clo_id = clos.id
-            ORDER BY
-                students.roll_number
-            """
-        )
-
-        if data.empty:
-
-            st.info(
-                "No student results available."
-            )
-
-        else:
-
-            data["percentage"] = (
-                data["marks_obtained"]
-                /
-                data["marks_total"]
-                *
-                100
-            ).round(2)
-
-            st.dataframe(
-                data,
-                use_container_width=True,
-                hide_index=True
-            )
-
-            csv = data.to_csv(
-                index=False
-            ).encode(
-                "utf-8-sig"
-            )
-
-            st.download_button(
-                "📥 Download Excel-compatible CSV",
-                csv,
-                "Fast_Tutor_Student_Results.csv",
-                "text/csv"
             )
 
 
@@ -1878,28 +2854,31 @@ elif page == "📑 Reports":
 # IMPORT / EXPORT
 # ============================================================
 
-elif page == "📤 Import / Export":
+elif page == "📥 Import / Export":
 
-    st.title("📤 Import / Export")
+    page_header(
+        "Import / Export",
+        "Bulk data management for FAST TUTOR"
+    )
 
-    import_tab, export_tab = st.tabs(
+    tab1, tab2 = st.tabs(
         [
             "📥 Import",
             "📤 Export"
         ]
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # IMPORT
-    # ========================================================
+    # --------------------------------------------------------
 
-    with import_tab:
+    with tab1:
 
         import_type = st.selectbox(
-            "What do you want to import?",
+            "Select Import Type",
             [
                 "Students",
-                "Student Results / Marks"
+                "Student Marks"
             ]
         )
 
@@ -1914,73 +2893,73 @@ elif page == "📤 Import / Export":
             )
 
             st.write(
-                "Upload a complete class list instead of "
-                "entering students one by one."
+                "Upload the complete student list."
             )
 
-            student_template = pd.DataFrame(
-                columns=[
-                    "roll_number",
-                    "name",
-                    "email",
-                    "section",
-                    "semester"
+            template = pd.DataFrame(
+                [
+                    {
+                        "roll_number": "2026-CS-001",
+                        "name": "Ali Khan",
+                        "email": "ali@example.com",
+                        "section": "A",
+                        "semester": "1"
+                    },
+                    {
+                        "roll_number": "2026-CS-002",
+                        "name": "Sara Ahmed",
+                        "email": "sara@example.com",
+                        "section": "A",
+                        "semester": "1"
+                    }
                 ]
             )
 
-            student_template.loc[0] = [
-                "2026-CS-001",
-                "Ali Khan",
-                "ali@example.com",
-                "A",
-                "1"
-            ]
-
-            student_csv = (
-                student_template
-                .to_csv(index=False)
-                .encode("utf-8-sig")
+            csv = template.to_csv(
+                index=False
+            ).encode(
+                "utf-8-sig"
             )
 
             st.download_button(
                 "📥 Download Student Template",
-                student_csv,
-                "Fast_Tutor_Student_Template.csv",
+                csv,
+                "FAST_TUTOR_STUDENT_TEMPLATE.csv",
                 "text/csv"
             )
 
-            programs = program_options()
+            programs = program_choices()
 
             selected_program = None
 
             if programs:
 
                 selected_program = st.selectbox(
-                    "Assign all imported students to program",
+                    "Program for imported students",
                     list(programs.keys())
                 )
 
             uploaded = st.file_uploader(
-                "Upload Student Excel / CSV",
+                "Upload Student Excel/CSV",
                 type=[
                     "xlsx",
                     "xls",
                     "csv"
                 ],
-                key="student_import"
+                key="students_import"
             )
 
-            if uploaded is not None:
+            if uploaded:
 
                 try:
 
-                    df = read_uploaded_file(
+                    data = read_file(
                         uploaded
                     )
 
-                    df.columns = [
+                    data.columns = [
                         normalize_column(c)
-                        for c in df.columns
+                        for c in data.columns
                     ]
 
                     aliases = {
@@ -1989,45 +2968,37 @@ elif page == "📤 Import / Export":
                         "roll": "roll_number",
                         "student_id": "roll_number",
                         "studentid": "roll_number",
-                        "registration_no": "roll_number",
-                        "registration_number": "roll_number",
                         "student_name": "name",
-                        "full_name": "name",
-                        "student": "name"
+                        "full_name": "name"
                     }
 
-                    df = df.rename(
+                    data = data.rename(
                         columns=aliases
                     )
 
-                    required = [
-                        "roll_number",
+                    if (
+                        "roll_number"
+                        not in data.columns
+                    ) or (
                         "name"
-                    ]
-
-                    missing = [
-                        c
-                        for c in required
-                        if c not in df.columns
-                    ]
-
-                    if missing:
+                        not in data.columns
+                    ):
 
                         st.error(
-                            "Missing required columns: "
-                            + ", ".join(missing)
+                            "Your file must contain "
+                            "roll_number and name columns."
                         )
 
                     else:
 
                         st.dataframe(
-                            df,
+                            data,
                             use_container_width=True,
                             hide_index=True
                         )
 
                         if st.button(
-                            "🚀 Import Students",
+                            "🚀 IMPORT ALL STUDENTS",
                             type="primary"
                         ):
 
@@ -2036,7 +3007,7 @@ elif page == "📤 Import / Export":
 
                             try:
 
-                                conn.execute(
+                                db.execute(
                                     "BEGIN"
                                 )
 
@@ -2048,7 +3019,7 @@ elif page == "📤 Import / Export":
                                         selected_program
                                     ]
 
-                                for _, row in df.iterrows():
+                                for _, row in data.iterrows():
 
                                     roll = clean(
                                         row[
@@ -2057,9 +3028,7 @@ elif page == "📤 Import / Export":
                                     )
 
                                     name = clean(
-                                        row[
-                                            "name"
-                                        ]
+                                        row["name"]
                                     )
 
                                     if not roll or not name:
@@ -2087,18 +3056,20 @@ elif page == "📤 Import / Export":
                                         )
                                     )
 
-                                    existing = conn.execute(
+                                    existing = db.execute(
                                         """
                                         SELECT id
                                         FROM students
                                         WHERE roll_number = ?
                                         """,
-                                        (roll,)
+                                        (
+                                            roll,
+                                        )
                                     ).fetchone()
 
                                     if existing:
 
-                                        conn.execute(
+                                        db.execute(
                                             """
                                             UPDATE students
                                             SET
@@ -2123,7 +3094,7 @@ elif page == "📤 Import / Export":
 
                                     else:
 
-                                        conn.execute(
+                                        db.execute(
                                             """
                                             INSERT INTO students
                                             (
@@ -2150,27 +3121,28 @@ elif page == "📤 Import / Export":
 
                                         inserted += 1
 
-                                conn.commit()
+                                db.commit()
 
                                 st.success(
-                                    "🎉 Students imported successfully!"
+                                    "🎉 FAST TUTOR: "
+                                    "STUDENTS IMPORTED!"
                                 )
 
-                                c1, c2 = st.columns(2)
+                                a, b = st.columns(2)
 
-                                c1.metric(
+                                a.metric(
                                     "New Students",
                                     inserted
                                 )
 
-                                c2.metric(
+                                b.metric(
                                     "Updated Students",
                                     updated
                                 )
 
                             except Exception as error:
 
-                                conn.rollback()
+                                db.rollback()
 
                                 st.error(
                                     "Student import failed."
@@ -2183,7 +3155,7 @@ elif page == "📤 Import / Export":
                 except Exception as error:
 
                     st.error(
-                        "Could not read the student file."
+                        "Unable to read the file."
                     )
 
                     st.exception(
@@ -2191,7 +3163,7 @@ elif page == "📤 Import / Export":
                     )
 
         # ====================================================
-        # RESULT IMPORT
+        # MARKS IMPORT
         # ====================================================
 
         else:
@@ -2201,12 +3173,11 @@ elif page == "📤 Import / Export":
             )
 
             st.success(
-                "This is the main marks-entry method. "
-                "You can upload the complete class results "
-                "in one Excel/CSV file."
+                "Upload marks for the ENTIRE CLASS "
+                "in one file."
             )
 
-            assessments = get_assessments()
+            assessments = assessments_df()
 
             if assessments.empty:
 
@@ -2216,14 +3187,13 @@ elif page == "📤 Import / Export":
 
             else:
 
-                assessment_map = assessment_options()
+                assessment_map = assessment_choices()
 
                 selected_assessment = st.selectbox(
-                    "Select Assessment",
+                    "Assessment",
                     list(
                         assessment_map.keys()
-                    ),
-                    key="bulk_result_assessment"
+                    )
                 )
 
                 assessment_id = assessment_map[
@@ -2239,30 +3209,28 @@ elif page == "📤 Import / Export":
                     assessment["course_id"]
                 )
 
-                course_clos = get_clos()
+                all_clos = clos_df()
 
-                course_clos = course_clos[
-                    course_clos["course_id"]
+                course_clos = all_clos[
+                    all_clos["course_id"]
                     == course_id
                 ]
 
                 if course_clos.empty:
 
                     st.warning(
-                        "Create CLOs for this course first."
+                        "This course has no CLOs."
                     )
 
                 else:
 
                     clo_codes = [
-                        clean(x)
-                        for x in course_clos[
-                            "clo_code"
-                        ]
+                        clean(c)
+                        for c in course_clos["code"]
                     ]
 
-                    st.write(
-                        "### Required file structure"
+                    st.markdown(
+                        "### Required columns"
                     )
 
                     st.code(
@@ -2272,17 +3240,19 @@ elif page == "📤 Import / Export":
                         )
                     )
 
-                    template = pd.DataFrame(
-                        columns=[
-                            "roll_number",
-                            "name"
-                        ]
-                        + clo_codes
-                    )
+                    students = students_df()
 
-                    students = get_students()
+                    if students.empty:
 
-                    if not students.empty:
+                        template = pd.DataFrame(
+                            columns=[
+                                "roll_number",
+                                "name"
+                            ]
+                            + clo_codes
+                        )
+
+                    else:
 
                         template = students[
                             [
@@ -2295,43 +3265,17 @@ elif page == "📤 Import / Export":
 
                             template[clo] = ""
 
-                    template_csv = (
-                        template
-                        .to_csv(
-                            index=False
-                        )
-                        .encode(
-                            "utf-8-sig"
-                        )
+                    csv = template.to_csv(
+                        index=False
+                    ).encode(
+                        "utf-8-sig"
                     )
 
                     st.download_button(
                         "📥 Download Marks Template",
-                        template_csv,
-                        "Fast_Tutor_Marks_Template.csv",
+                        csv,
+                        "FAST_TUTOR_MARKS_TEMPLATE.csv",
                         "text/csv"
-                    )
-
-                    excel_buffer = BytesIO()
-
-                    with pd.ExcelWriter(
-                        excel_buffer,
-                        engine="openpyxl"
-                    ) as writer:
-
-                        template.to_excel(
-                            writer,
-                            index=False,
-                            sheet_name="Marks"
-                        )
-
-                    excel_buffer.seek(0)
-
-                    st.download_button(
-                        "📥 Download Excel Marks Template",
-                        excel_buffer,
-                        "Fast_Tutor_Marks_Template.xlsx",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
 
                     uploaded = st.file_uploader(
@@ -2341,20 +3285,20 @@ elif page == "📤 Import / Export":
                             "xls",
                             "csv"
                         ],
-                        key="result_import"
+                        key="marks_import_2"
                     )
 
-                    if uploaded is not None:
+                    if uploaded:
 
                         try:
 
-                            df = read_uploaded_file(
+                            data = read_file(
                                 uploaded
                             )
 
-                            df.columns = [
+                            data.columns = [
                                 normalize_column(c)
-                                for c in df.columns
+                                for c in data.columns
                             ]
 
                             aliases = {
@@ -2364,386 +3308,363 @@ elif page == "📤 Import / Export":
                                 "student_id": "roll_number",
                                 "studentid": "roll_number",
                                 "student_name": "name",
-                                "full_name": "name",
-                                "student": "name"
+                                "full_name": "name"
                             }
 
-                            df = df.rename(
+                            data = data.rename(
                                 columns=aliases
                             )
 
-                            if (
-                                "roll_number"
-                                not in df.columns
-                            ):
+                            missing = [
+                                c
+                                for c in [
+                                    "roll_number"
+                                ] + clo_codes
+                                if c not in data.columns
+                            ]
+
+                            if missing:
 
                                 st.error(
-                                    "The marks file must contain "
-                                    "a roll_number column."
+                                    "Missing columns: "
+                                    + ", ".join(
+                                        missing
+                                    )
                                 )
 
                             else:
 
-                                missing_clos = [
-                                    clo
-                                    for clo in clo_codes
-                                    if clo not in df.columns
-                                ]
+                                data[clo_codes] = data[
+                                    clo_codes
+                                ].apply(
+                                    pd.to_numeric,
+                                    errors="coerce"
+                                )
 
-                                if missing_clos:
+                                st.dataframe(
+                                    data,
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
 
-                                    st.error(
-                                        "Missing CLO columns: "
-                                        + ", ".join(
-                                            missing_clos
-                                        )
+                                total_marks = {}
+
+                                st.subheader(
+                                    "Total marks for each CLO"
+                                )
+
+                                cols = st.columns(
+                                    min(
+                                        4,
+                                        len(clo_codes)
                                     )
+                                )
 
-                                else:
+                                for i, clo in enumerate(
+                                    clo_codes
+                                ):
 
-                                    students = get_students()
-
-                                    registered = set(
-                                        students[
-                                            "roll_number"
-                                        ]
-                                        .astype(str)
-                                        .str.strip()
-                                    )
-
-                                    unknown = []
-
-                                    for roll in df[
-                                        "roll_number"
+                                    with cols[
+                                        i % len(cols)
                                     ]:
 
-                                        roll = str(
-                                            roll
-                                        ).strip()
-
-                                        if (
-                                            roll
-                                            and
-                                            roll not in registered
-                                        ):
-
-                                            unknown.append(
-                                                roll
+                                        total_marks[
+                                            clo
+                                        ] = st.number_input(
+                                            f"{clo} Total",
+                                            min_value=0.01,
+                                            value=10.0,
+                                            step=1.0,
+                                            key=(
+                                                f"tm_"
+                                                f"{assessment_id}_"
+                                                f"{clo}"
                                             )
+                                        )
 
-                                    if unknown:
+                                valid = True
+
+                                for clo in clo_codes:
+
+                                    if (
+                                        data[clo]
+                                        .dropna()
+                                        < 0
+                                    ).any():
 
                                         st.error(
-                                            "These roll numbers "
-                                            "are not registered:"
+                                            f"{clo} contains "
+                                            "negative marks."
                                         )
 
-                                        st.write(
-                                            ", ".join(
-                                                unknown
+                                        valid = False
+
+                                    if (
+                                        data[clo]
+                                        .dropna()
+                                        >
+                                        total_marks[clo]
+                                    ).any():
+
+                                        st.error(
+                                            f"{clo} contains marks "
+                                            "greater than total."
+                                        )
+
+                                        valid = False
+
+                                if valid:
+
+                                    confirm = st.checkbox(
+                                        "I confirm that the uploaded marks are correct."
+                                    )
+
+                                    if st.button(
+                                        "🚀 IMPORT COMPLETE CLASS MARKS",
+                                        type="primary",
+                                        disabled=not confirm
+                                    ):
+
+                                        try:
+
+                                            db.execute(
+                                                "BEGIN"
                                             )
-                                        )
 
-                                    else:
+                                            students = students_df()
 
-                                        for clo in clo_codes:
-
-                                            df[clo] = (
-                                                pd.to_numeric(
-                                                    df[clo],
-                                                    errors="coerce"
+                                            student_lookup = {
+                                                str(
+                                                    row[
+                                                        "roll_number"
+                                                    ]
+                                                ).strip():
+                                                int(
+                                                    row[
+                                                        "id"
+                                                    ]
                                                 )
-                                            )
+                                                for _, row
+                                                in students.iterrows()
+                                            }
 
-                                        st.subheader(
-                                            "👀 Marks Preview"
-                                        )
-
-                                        st.dataframe(
-                                            df,
-                                            use_container_width=True,
-                                            hide_index=True
-                                        )
-
-                                        total_cols = st.columns(
-                                            min(
-                                                4,
-                                                len(clo_codes)
-                                            )
-                                        )
-
-                                        totals = {}
-
-                                        for i, clo in enumerate(
-                                            clo_codes
-                                        ):
-
-                                            with total_cols[
-                                                i % len(
-                                                    total_cols
+                                            clo_lookup = {
+                                                clean(
+                                                    row[
+                                                        "code"
+                                                    ]
+                                                ):
+                                                int(
+                                                    row[
+                                                        "id"
+                                                    ]
                                                 )
-                                            ]:
+                                                for _, row
+                                                in course_clos.iterrows()
+                                            }
 
-                                                totals[
-                                                    clo
-                                                ] = st.number_input(
-                                                    f"{clo} Total Marks",
-                                                    min_value=0.01,
-                                                    value=10.0,
-                                                    step=1.0,
-                                                    key=(
-                                                        f"bulk_total_"
-                                                        f"{assessment_id}_"
-                                                        f"{clo}"
+                                            inserted = 0
+                                            updated = 0
+
+                                            for _, row in data.iterrows():
+
+                                                roll = clean(
+                                                    row[
+                                                        "roll_number"
+                                                    ]
+                                                )
+
+                                                if not roll:
+
+                                                    continue
+
+                                                if roll not in student_lookup:
+
+                                                    raise ValueError(
+                                                        f"Roll number "
+                                                        f"{roll} is not "
+                                                        f"registered."
                                                     )
+
+                                                student_id = (
+                                                    student_lookup[
+                                                        roll
+                                                    ]
                                                 )
 
-                                        errors = []
+                                                for clo in clo_codes:
 
-                                        for clo in clo_codes:
+                                                    mark = row[
+                                                        clo
+                                                    ]
 
-                                            if (
-                                                df[clo]
-                                                .dropna()
-                                                < 0
-                                            ).any():
+                                                    if pd.isna(
+                                                        mark
+                                                    ):
 
-                                                errors.append(
-                                                    f"{clo}: negative marks found."
-                                                )
+                                                        continue
 
-                                            if (
-                                                df[clo]
-                                                .dropna()
-                                                > totals[clo]
-                                            ).any():
+                                                    obtained = float(
+                                                        mark
+                                                    )
 
-                                                errors.append(
-                                                    f"{clo}: marks exceed "
-                                                    f"total marks."
-                                                )
+                                                    total = float(
+                                                        total_marks[
+                                                            clo
+                                                        ]
+                                                    )
 
-                                        if errors:
+                                                    clo_id = (
+                                                        clo_lookup[
+                                                            clo
+                                                        ]
+                                                    )
+
+                                                    existing = db.execute(
+                                                        """
+                                                        SELECT id
+                                                        FROM results
+                                                        WHERE
+                                                            assessment_id = ?
+                                                            AND student_id = ?
+                                                            AND clo_id = ?
+                                                        """,
+                                                        (
+                                                            assessment_id,
+                                                            student_id,
+                                                            clo_id
+                                                        )
+                                                    ).fetchone()
+
+                                                    if existing:
+
+                                                        db.execute(
+                                                            """
+                                                            UPDATE results
+                                                            SET
+                                                                marks_obtained = ?,
+                                                                marks_total = ?
+                                                            WHERE id = ?
+                                                            """,
+                                                            (
+                                                                obtained,
+                                                                total,
+                                                                existing[0]
+                                                            )
+                                                        )
+
+                                                        updated += 1
+
+                                                    else:
+
+                                                        db.execute(
+                                                            """
+                                                            INSERT INTO results
+                                                            (
+                                                                assessment_id,
+                                                                student_id,
+                                                                clo_id,
+                                                                marks_obtained,
+                                                                marks_total
+                                                            )
+                                                            VALUES (?, ?, ?, ?, ?)
+                                                            """,
+                                                            (
+                                                                assessment_id,
+                                                                student_id,
+                                                                clo_id,
+                                                                obtained,
+                                                                total
+                                                            )
+                                                        )
+
+                                                        inserted += 1
+
+                                            db.commit()
+
+                                            st.success(
+                                                "🎉 FAST TUTOR: "
+                                                "COMPLETE CLASS MARKS "
+                                                "IMPORTED SUCCESSFULLY!"
+                                            )
+
+                                            a, b = st.columns(2)
+
+                                            a.metric(
+                                                "New Marks",
+                                                inserted
+                                            )
+
+                                            b.metric(
+                                                "Updated Marks",
+                                                updated
+                                            )
+
+                                        except Exception as error:
+
+                                            db.rollback()
 
                                             st.error(
-                                                "Please correct:"
+                                                "Upload failed. "
+                                                "No partial marks were saved."
                                             )
 
-                                            for error in errors:
-
-                                                st.write(
-                                                    "• "
-                                                    + error
-                                                )
-
-                                        else:
-
-                                            confirm = st.checkbox(
-                                                "I confirm that these "
-                                                "are the final student marks."
+                                            st.exception(
+                                                error
                                             )
-
-                                            if st.button(
-                                                "🚀 IMPORT ALL MARKS",
-                                                type="primary",
-                                                disabled=not confirm
-                                            ):
-
-                                                inserted = 0
-                                                updated = 0
-
-                                                try:
-
-                                                    conn.execute(
-                                                        "BEGIN"
-                                                    )
-
-                                                    student_lookup = {
-                                                        str(
-                                                            row[
-                                                                "roll_number"
-                                                            ]
-                                                        ).strip():
-                                                        int(
-                                                            row[
-                                                                "id"
-                                                            ]
-                                                        )
-                                                        for _, row
-                                                        in students.iterrows()
-                                                    }
-
-                                                    clo_lookup = {
-                                                        clean(
-                                                            row[
-                                                                "clo_code"
-                                                            ]
-                                                        ):
-                                                        int(
-                                                            row[
-                                                                "id"
-                                                            ]
-                                                        )
-                                                        for _, row
-                                                        in course_clos.iterrows()
-                                                    }
-
-                                                    for _, row in df.iterrows():
-
-                                                        roll = clean(
-                                                            row[
-                                                                "roll_number"
-                                                            ]
-                                                        )
-
-                                                        student_db_id = (
-                                                            student_lookup[
-                                                                roll
-                                                            ]
-                                                        )
-
-                                                        for clo in clo_codes:
-
-                                                            mark = row[
-                                                                clo
-                                                            ]
-
-                                                            if pd.isna(
-                                                                mark
-                                                            ):
-
-                                                                continue
-
-                                                            obtained = float(
-                                                                mark
-                                                            )
-
-                                                            total = float(
-                                                                totals[
-                                                                    clo
-                                                                ]
-                                                            )
-
-                                                            clo_id = (
-                                                                clo_lookup[
-                                                                    clo
-                                                                ]
-                                                            )
-
-                                                            existing = conn.execute(
-                                                                """
-                                                                SELECT id
-                                                                FROM results
-                                                                WHERE
-                                                                    assessment_id = ?
-                                                                    AND student_id = ?
-                                                                    AND clo_id = ?
-                                                                """,
-                                                                (
-                                                                    assessment_id,
-                                                                    student_db_id,
-                                                                    clo_id
-                                                                )
-                                                            ).fetchone()
-
-                                                            if existing:
-
-                                                                conn.execute(
-                                                                    """
-                                                                    UPDATE results
-                                                                    SET
-                                                                        marks_obtained = ?,
-                                                                        marks_total = ?
-                                                                    WHERE id = ?
-                                                                    """,
-                                                                    (
-                                                                        obtained,
-                                                                        total,
-                                                                        existing[0]
-                                                                    )
-                                                                )
-
-                                                                updated += 1
-
-                                                            else:
-
-                                                                conn.execute(
-                                                                    """
-                                                                    INSERT INTO results
-                                                                    (
-                                                                        assessment_id,
-                                                                        student_id,
-                                                                        clo_id,
-                                                                        marks_obtained,
-                                                                        marks_total
-                                                                    )
-                                                                    VALUES (?, ?, ?, ?, ?)
-                                                                    """,
-                                                                    (
-                                                                        assessment_id,
-                                                                        student_db_id,
-                                                                        clo_id,
-                                                                        obtained,
-                                                                        total
-                                                                    )
-                                                                )
-
-                                                                inserted += 1
-
-                                                    conn.commit()
-
-                                                    st.success(
-                                                        "🎉 ALL MARKS "
-                                                        "IMPORTED SUCCESSFULLY!"
-                                                    )
-
-                                                    c1, c2 = st.columns(2)
-
-                                                    c1.metric(
-                                                        "New Marks",
-                                                        inserted
-                                                    )
-
-                                                    c2.metric(
-                                                        "Updated Marks",
-                                                        updated
-                                                    )
-
-                                                except Exception as error:
-
-                                                    conn.rollback()
-
-                                                    st.error(
-                                                        "Marks import failed. "
-                                                        "No partial data was saved."
-                                                    )
-
-                                                    st.exception(
-                                                        error
-                                                    )
 
                         except Exception as error:
 
                             st.error(
-                                "Could not read the uploaded file."
+                                "Could not read the marks file."
                             )
 
                             st.exception(
                                 error
                             )
 
-    # ========================================================
-    # EXPORT
-    # ========================================================
+
+# ============================================================
+# EXPORT
+# ============================================================
+
+elif page == "📥 Import / Export":
+
+    page_header(
+        "Import / Export",
+        "Export FAST TUTOR data"
+    )
+
+    import_tab, export_tab = st.tabs(
+        [
+            "📥 Import",
+            "📤 Export"
+        ]
+    )
+
+    with import_tab:
+
+        st.info(
+            "Use the dedicated Bulk Marks Upload menu "
+            "for complete-class marks."
+        )
+
+        st.write(
+            "Supported formats:"
+        )
+
+        st.write(
+            "• Excel (.xlsx / .xls)"
+        )
+
+        st.write(
+            "• CSV (.csv)"
+        )
 
     with export_tab:
 
-        st.subheader(
-            "📤 Export Data"
-        )
-
         export_type = st.selectbox(
-            "Select data",
+            "Export",
             [
                 "Students",
                 "Programs",
@@ -2757,33 +3678,33 @@ elif page == "📤 Import / Export":
 
         if export_type == "Students":
 
-            data = get_students()
+            data = students_df()
 
         elif export_type == "Programs":
 
-            data = get_programs()
+            data = programs_df()
 
         elif export_type == "PLOs":
 
-            data = get_plos()
+            data = plos_df()
 
         elif export_type == "Courses":
 
-            data = get_courses()
+            data = courses_df()
 
         elif export_type == "CLOs":
 
-            data = get_clos()
+            data = clos_df()
 
         elif export_type == "Mappings":
 
-            data = query_df(
+            data = fetch_df(
                 """
                 SELECT
-                    courses.code AS course,
-                    clos.clo_code,
-                    plos.plo_code,
-                    mappings.strength
+                    courses.code AS Course,
+                    clos.code AS CLO,
+                    plos.code AS PLO,
+                    mappings.strength AS Strength
                 FROM mappings
                 JOIN clos
                     ON mappings.clo_id = clos.id
@@ -2796,16 +3717,16 @@ elif page == "📤 Import / Export":
 
         else:
 
-            data = query_df(
+            data = fetch_df(
                 """
                 SELECT
-                    students.roll_number,
-                    students.name,
-                    courses.code AS course,
-                    assessments.name AS assessment,
-                    clos.clo_code,
-                    results.marks_obtained,
-                    results.marks_total
+                    students.roll_number AS Roll_Number,
+                    students.name AS Student_Name,
+                    courses.code AS Course,
+                    assessments.name AS Assessment,
+                    clos.code AS CLO,
+                    results.marks_obtained AS Marks,
+                    results.marks_total AS Total
                 FROM results
                 JOIN students
                     ON results.student_id = students.id
@@ -2824,38 +3745,38 @@ elif page == "📤 Import / Export":
             hide_index=True
         )
 
-        csv_data = (
-            data
-            .to_csv(index=False)
-            .encode("utf-8-sig")
+        csv = data.to_csv(
+            index=False
+        ).encode(
+            "utf-8-sig"
         )
 
         st.download_button(
             "📥 Download CSV",
-            csv_data,
-            f"Fast_Tutor_{export_type.replace(' ', '_')}.csv",
+            csv,
+            f"FAST_TUTOR_{export_type}.csv",
             "text/csv"
         )
 
-        excel_buffer = BytesIO()
+        excel = BytesIO()
 
         with pd.ExcelWriter(
-            excel_buffer,
+            excel,
             engine="openpyxl"
         ) as writer:
 
             data.to_excel(
                 writer,
                 index=False,
-                sheet_name="Data"
+                sheet_name="FAST TUTOR"
             )
 
-        excel_buffer.seek(0)
+        excel.seek(0)
 
         st.download_button(
             "📥 Download Excel",
-            excel_buffer,
-            f"Fast_Tutor_{export_type.replace(' ', '_')}.xlsx",
+            excel,
+            f"FAST_TUTOR_{export_type}.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
@@ -2866,81 +3787,100 @@ elif page == "📤 Import / Export":
 
 elif page == "⚙️ Settings":
 
-    st.title("⚙️ Settings")
-
-    st.subheader(
-        "Fast Tutor"
-    )
-
-    st.write(
-        "CLO–PLO Mapping Management System"
+    page_header(
+        "FAST TUTOR Settings",
+        "System configuration"
     )
 
     st.info(
-        "Database file: fast_tutor.db"
+        "Application: FAST TUTOR"
     )
 
+    st.info(
+        "Database: fast_tutor.db"
+    )
+
+    st.subheader(
+        "Database Statistics"
+    )
+
+    a, b, c, d = st.columns(4)
+
+    a.metric(
+        "Programs",
+        len(programs_df())
+    )
+
+    b.metric(
+        "Courses",
+        len(courses_df())
+    )
+
+    c.metric(
+        "Students",
+        len(students_df())
+    )
+
+    d.metric(
+        "CLOs",
+        len(clos_df())
+    )
+
+    st.divider()
+
     st.warning(
-        "The reset option permanently deletes all "
-        "programs, PLOs, courses, CLOs, mappings, "
-        "students, assessments and results."
+        "The reset option permanently deletes ALL "
+        "FAST TUTOR data."
+    )
+
+    confirm = st.checkbox(
+        "I understand that this will delete all data."
     )
 
     if st.button(
-        "🗑️ Delete All Data",
-        type="secondary"
+        "🗑️ DELETE ALL FAST TUTOR DATA",
+        disabled=not confirm
     ):
 
-        confirm = st.checkbox(
-            "I understand that this permanently deletes all data."
-        )
+        try:
 
-        if confirm:
+            db.execute(
+                "BEGIN"
+            )
 
-            if st.button(
-                "⚠️ CONFIRM DELETE EVERYTHING",
-                type="primary"
-            ):
+            tables = [
+                "results",
+                "assessments",
+                "mappings",
+                "clos",
+                "students",
+                "courses",
+                "plos",
+                "programs"
+            ]
 
-                tables = [
-                    "results",
-                    "assessments",
-                    "students",
-                    "mappings",
-                    "clos",
-                    "courses",
-                    "plos",
-                    "programs"
-                ]
+            for table in tables:
 
-                try:
+                db.execute(
+                    f"DELETE FROM {table}"
+                )
 
-                    conn.execute(
-                        "BEGIN"
-                    )
+            db.commit()
 
-                    for table in tables:
+            st.success(
+                "All FAST TUTOR data has been deleted."
+            )
 
-                        conn.execute(
-                            f"DELETE FROM {table}"
-                        )
+            st.rerun()
 
-                    conn.commit()
+        except Exception as error:
 
-                    st.success(
-                        "All data has been deleted."
-                    )
+            db.rollback()
 
-                    st.rerun()
+            st.error(
+                "Unable to reset the database."
+            )
 
-                except Exception as error:
-
-                    conn.rollback()
-
-                    st.error(
-                        "Could not delete data."
-                    )
-
-                    st.exception(
-                        error
-                    )
+            st.exception(
+                error
+            )
